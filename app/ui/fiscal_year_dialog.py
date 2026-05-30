@@ -42,8 +42,12 @@ class FiscalYearDialog(QDialog):
         layout.addWidget(self._table)
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        btn_row.addWidget(QPushButton("キャンセル")).clicked.connect(self.reject)
-        btn_row.addWidget(QPushButton("年度更新を実行する")).clicked.connect(self._execute)
+        btn_cancel = QPushButton("キャンセル")
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addWidget(btn_cancel)
+        btn_exec = QPushButton("年度更新を実行する")
+        btn_exec.clicked.connect(self._execute)
+        btn_row.addWidget(btn_exec)
         layout.addLayout(btn_row)
 
     def _load(self):
