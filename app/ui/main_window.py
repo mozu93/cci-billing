@@ -14,9 +14,16 @@ class MainWindow(QMainWindow):
 
     def _build_tabs(self):
         tabs = QTabWidget()
-        tabs.addTab(QLabel("ダッシュボード（Plan 2で実装）"), "ダッシュボード")
-        tabs.addTab(QLabel("事業管理（Plan 2で実装）"), "事業管理")
-        tabs.addTab(QLabel("発行（Plan 2で実装）"), "発行")
+
+        from app.ui.dashboard import DashboardWidget
+        tabs.addTab(DashboardWidget(), "ダッシュボード")
+
+        from app.ui.project_tab import ProjectTab
+        tabs.addTab(ProjectTab(), "事業管理")
+
+        from app.ui.issuance_tab import IssuanceTab
+        tabs.addTab(IssuanceTab(), "発行")
+
         tabs.addTab(QLabel("レポート（Plan 4で実装）"), "レポート")
 
         from app.ui.settings_tab import SettingsTab

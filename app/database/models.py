@@ -165,6 +165,8 @@ class ProjectTemplate(Base):
     sort_order = Column(Integer, default=0)
     unit_price_override = Column(Numeric(15, 0), nullable=True)
 
+    item_template = relationship("ItemTemplate")
+
 
 class ProjectMember(Base):
     __tablename__ = "project_members"
@@ -172,6 +174,8 @@ class ProjectMember(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
     member_id = Column(Integer, ForeignKey("members_master.id"), nullable=True)
     sort_order = Column(Integer, default=0)
+
+    member = relationship("Member")
 
 
 class Issuance(Base):
