@@ -31,6 +31,9 @@ class DashboardWidget(QWidget):
         btn_refresh.clicked.connect(self._load)
         top_row.addWidget(self._year_combo)
         top_row.addWidget(btn_refresh)
+        btn_rollover = QPushButton("年度更新")
+        btn_rollover.clicked.connect(self._rollover)
+        top_row.addWidget(btn_rollover)
         top_row.addStretch()
         layout.addLayout(top_row)
 
@@ -99,3 +102,10 @@ class DashboardWidget(QWidget):
         finally:
             session.close()
         self._load()
+
+    def _rollover(self):
+        from app.ui.fiscal_year_dialog import FiscalYearDialog
+        from PyQt6.QtWidgets import QDialog
+        dlg = FiscalYearDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._load()

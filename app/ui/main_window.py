@@ -24,7 +24,8 @@ class MainWindow(QMainWindow):
         from app.ui.issuance_tab import IssuanceTab
         tabs.addTab(IssuanceTab(), "発行")
 
-        tabs.addTab(QLabel("レポート（Plan 4で実装）"), "レポート")
+        from app.ui.report_tab import ReportTab
+        tabs.addTab(ReportTab(), "レポート")
 
         from app.ui.settings_tab import SettingsTab
         tabs.addTab(SettingsTab(), "設定")

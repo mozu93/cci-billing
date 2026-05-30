@@ -13,10 +13,14 @@ class SettingsTab(QWidget):
         from app.ui.category_management import CategoryManagementWidget
         from app.ui.item_template_management import ItemTemplateManagementWidget
         from app.ui.member_list import MemberListWidget
+        from app.ui.email_settings import EmailSettingsWidget
+        from app.ui.backup_settings import BackupSettingsWidget
 
         inner.addTab(CompanySettingsWidget(), "発行元情報")
         inner.addTab(StaffManagementWidget(), "スタッフ管理")
         inner.addTab(CategoryManagementWidget(), "カテゴリ")
         inner.addTab(ItemTemplateManagementWidget(), "請求項目テンプレート")
         inner.addTab(MemberListWidget(), "会員マスタ")
+        inner.addTab(EmailSettingsWidget(), "メール設定")
+        inner.addTab(BackupSettingsWidget(), "バックアップ")
         layout.addWidget(inner)
