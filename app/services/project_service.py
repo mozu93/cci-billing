@@ -78,7 +78,9 @@ def remove_template_from_project(session: Session, project_id: int,
 
 
 def get_project_templates(session: Session, project_id: int) -> list[ProjectTemplate]:
+    from sqlalchemy.orm import joinedload
     return (session.query(ProjectTemplate)
+            .options(joinedload(ProjectTemplate.item_template))
             .filter_by(project_id=project_id)
             .order_by(ProjectTemplate.sort_order)
             .all())
@@ -100,7 +102,9 @@ def add_members_to_project(session: Session, project_id: int,
 
 
 def get_project_members(session: Session, project_id: int) -> list[ProjectMember]:
+    from sqlalchemy.orm import joinedload
     return (session.query(ProjectMember)
+            .options(joinedload(ProjectMember.member))
             .filter_by(project_id=project_id)
             .order_by(ProjectMember.sort_order)
             .all())

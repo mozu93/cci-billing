@@ -24,7 +24,9 @@ def get_templates_by_category(session: Session, category_id: int) -> list[ItemTe
 
 
 def get_all_active_templates(session: Session) -> list[ItemTemplate]:
+    from sqlalchemy.orm import joinedload
     return (session.query(ItemTemplate)
+            .options(joinedload(ItemTemplate.category))
             .filter_by(is_active=True)
             .order_by(ItemTemplate.category_id, ItemTemplate.name)
             .all())

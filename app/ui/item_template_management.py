@@ -46,19 +46,22 @@ class ItemTemplateManagementWidget(QWidget):
         session = get_session()
         try:
             templates = get_all_active_templates(session)
+            rows = []
+            for t in templates:
+                cat_name = t.category.name if t.category else ""
+                tax_label = next((l for l, v in TAX_RATE_OPTIONS if v == t.tax_rate), str(t.tax_rate))
+                doc_label = next((l for l, v in DOC_TYPE_OPTIONS if v == t.doc_type), t.doc_type)
+                rows.append((t.id, cat_name, t.name, f"¥{int(t.unit_price):,}",
+                              t.unit, tax_label, doc_label))
         finally:
             session.close()
         self._table.setRowCount(0)
-        for t in templates:
+        for tmpl_id, *vals in rows:
             row = self._table.rowCount()
             self._table.insertRow(row)
-            cat_name = t.category.name if t.category else ""
-            tax_label = next((l for l, v in TAX_RATE_OPTIONS if v == t.tax_rate), str(t.tax_rate))
-            doc_label = next((l for l, v in DOC_TYPE_OPTIONS if v == t.doc_type), t.doc_type)
-            for col, val in enumerate([cat_name, t.name, f"¥{int(t.unit_price):,}",
-                                        t.unit, tax_label, doc_label]):
+            for col, val in enumerate(vals):
                 item = QTableWidgetItem(val)
-                item.setData(Qt.ItemDataRole.UserRole, t.id)
+                item.setData(Qt.ItemDataRole.UserRole, tmpl_id)
                 self._table.setItem(row, col, item)
 
     def _add(self):
@@ -135,6 +138,11 @@ class ItemTemplateDialog(QDialog):
         if not name:
             QMessageBox.warning(self, "入力エラー", "項目名を入力してください。")
             return
+        if self._category.currentData() is None:
+            QMessageBox.warning(self, "入力エラー",
+                                "カテゴリが選択されていません。\n"
+                                "先に「設定→カテゴリ」でカテゴリを登録してください。")
+            return
         session = get_session()
         try:
             create_item_template(
@@ -147,6 +155,9 @@ class ItemTemplateDialog(QDialog):
                 doc_type=self._doc_type.currentData(),
                 description=self._description.text().strip()
             )
+        except Exception as e:
+            QMessageBox.critical(self, "保存エラー", str(e))
+            return
         finally:
             session.close()
         self.accept()
