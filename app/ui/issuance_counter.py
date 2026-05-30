@@ -146,10 +146,12 @@ class IssuanceCounterWidget(QWidget):
             iss.staff_name = current_user.get_name()
             iss.delivery_method = self._delivery_combo.currentText()
             session.commit()
+            from app.utils.pdf_helpers import generate_and_open
+            generate_and_open(iss, session)
+        except Exception as e:
+            QMessageBox.critical(self, "PDF生成エラー", str(e))
         finally:
             session.close()
-        QMessageBox.information(self, "発行完了",
-                                "発行しました。\nPDF印刷はPlan 3で実装されます。")
         self._org_name.clear()
         self._rep_name.clear()
         self._quantity.setValue(1)

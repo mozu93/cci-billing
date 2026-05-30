@@ -1,0 +1,48 @@
+# tests/test_invoice_pdf.py
+import os, tempfile
+from app.services.category_service import create_category
+from app.services.item_template_service import create_item_template
+from app.services.member_service import create_member
+from app.services.project_service import (
+    create_project, add_template_to_project, add_members_to_project,
+    get_project_members
+)
+from app.services.issuance_service import create_issuance_for_member
+from app.database.models import CompanySettings
+from app.services.pdf.invoice_pdf import generate_invoice_pdf
+
+
+def _make_issuance(db_session):
+    cat = create_category(db_session, "青年部")
+    tmpl = create_item_template(db_session, cat.id, "青年部会費",
+                                10000, "式", 0, "invoice", "")
+    proj = create_project(db_session, "2026年度 青年部会費", cat.id, 2026, "list")
+    add_template_to_project(db_session, proj.id, tmpl.id)
+    m = create_member(db_session, member_number="A-001",
+                      organization_name="○○商事株式会社",
+                      organization_kana="マルマルショウジ",
+                      representative_name="田中 太郎")
+    add_members_to_project(db_session, proj.id, [m.id])
+    pm = get_project_members(db_session, proj.id)[0]
+    return create_issuance_for_member(
+        db_session, proj.id, pm.id, m, "invoice", 2026, 5)
+
+
+def test_generate_invoice_pdf(db_session):
+    issuance = _make_issuance(db_session)
+    company = CompanySettings(
+        name="○○商工会議所",
+        postal_code="123-4567",
+        address="東京都千代田区1-1-1",
+        phone="03-1234-5678",
+        invoice_reg_number="T1234567890123"
+    )
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        path = f.name
+    try:
+        result = generate_invoice_pdf(issuance, company, path)
+        assert os.path.exists(result)
+        assert os.path.getsize(result) > 1000
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)

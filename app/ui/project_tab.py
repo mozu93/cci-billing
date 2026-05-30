@@ -73,7 +73,9 @@ class ProjectTab(QWidget):
         btn_close.clicked.connect(self._close)
         btn_archive = QPushButton("アーカイブ")
         btn_archive.clicked.connect(self._archive)
-        for b in [btn_activate, btn_close, btn_archive]:
+        btn_batch_pdf = QPushButton("一括PDF生成")
+        btn_batch_pdf.clicked.connect(self._batch_pdf)
+        for b in [btn_activate, btn_close, btn_archive, btn_batch_pdf]:
             btn_row2.addWidget(b)
         btn_row2.addStretch()
         layout.addLayout(btn_row2)
@@ -170,3 +172,26 @@ class ProjectTab(QWidget):
         finally:
             session.close()
         self._load()
+
+    def _batch_pdf(self):
+        pid = self._selected_project_id()
+        if pid is None:
+            return
+        from PyQt6.QtWidgets import QMessageBox
+        session = get_session()
+        try:
+            from app.utils.pdf_helpers import get_company_and_bank, get_pdf_output_dir
+            from app.services.pdf.batch_pdf import generate_batch_pdf
+            company, bank = get_company_and_bank(session)
+            if not company or not company.name:
+                QMessageBox.warning(self, "エラー",
+                                    "設定→発行元情報に名称を登録してください。")
+                return
+            output_dir = get_pdf_output_dir()
+            paths = generate_batch_pdf(session, pid, company, output_dir, bank)
+            QMessageBox.information(self, "完了",
+                                    f"{len(paths)} 件のPDFを生成しました。\n保存先：{output_dir}")
+        except Exception as e:
+            QMessageBox.critical(self, "エラー", str(e))
+        finally:
+            session.close()

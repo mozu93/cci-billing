@@ -183,14 +183,19 @@ class IssuanceFromProjectWidget(QWidget):
             from app.database.models import Issuance
             iss = session.get(Issuance, issuance_id)
             if iss and iss.status == "発行済み":
-                QMessageBox.information(self, "情報", "既に発行済みです。")
+                # 再発行：既存PDFを開く or 再生成
+                from app.utils.pdf_helpers import generate_and_open
+                generate_and_open(iss, session)
                 return
             mark_as_issued(session, issuance_id,
                            staff_id=current_user.get_id(),
                            staff_name=current_user.get_name(),
                            delivery_method=delivery)
+            iss = session.get(Issuance, issuance_id)
+            from app.utils.pdf_helpers import generate_and_open
+            generate_and_open(iss, session)
+        except Exception as e:
+            QMessageBox.critical(self, "PDF生成エラー", str(e))
         finally:
             session.close()
-        QMessageBox.information(self, "発行完了",
-                                f"発行しました。（{delivery}）\nPDF印刷はPlan 3で実装されます。")
         self._load_members()
