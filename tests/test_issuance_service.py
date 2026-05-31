@@ -98,6 +98,27 @@ def test_get_pending_for_project_member(db_session):
     assert pending[0].status == "準備中"
 
 
+def test_pending_for_project_member(db_session):
+    from app.services.project_service import (
+        create_project, add_roster_entries, get_project_members, add_template_to_project
+    )
+    from app.services.item_template_service import create_item_template
+    from app.services.category_service import create_category
+    from app.services.issuance_service import (
+        create_issuance_for_member, get_pending_issuances_for_project_member,
+    )
+    cat = create_category(db_session, "青年部")
+    tmpl = create_item_template(db_session, cat.id, "会費", 1000, "式", 0, "invoice", "")
+    proj = create_project(db_session, name="2026 青年部", category_id=cat.id,
+                          fiscal_year=2026, project_type="list")
+    add_template_to_project(db_session, proj.id, tmpl.id)
+    add_roster_entries(db_session, proj.id, [{"organization_name": "○○商事"}])
+    pm = get_project_members(db_session, proj.id)[0]
+    create_issuance_for_member(db_session, proj.id, pm.id, "○○商事", "", "invoice", 2026, 4)
+    pending = get_pending_issuances_for_project_member(db_session, pm.id)
+    assert len(pending) == 1
+
+
 def test_create_counter_issuance(db_session):
     cat = create_category(db_session, "検定")
     tmpl = create_item_template(db_session, cat.id, "珠算検定受験料",

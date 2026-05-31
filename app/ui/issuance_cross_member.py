@@ -7,30 +7,31 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from app.database.connection import get_session
-from app.services.member_service import search_members
 from app.services.issuance_service import (
     get_pending_issuances_for_project_member, create_combined_issuance
 )
-from app.services.project_service import get_project_by_id
+from app.services.project_service import (
+    get_projects, get_project_members, get_project_by_id
+)
 from app.utils import current_user
 
 
 class IssuanceCrossMemberWidget(QWidget):
     def __init__(self):
         super().__init__()
-        self._member = None
+        self._pm = None
         self._build()
 
     def _build(self):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(
-            "会員を検索して選択すると、全事業の未発行一覧が表示されます。\n"
+            "名簿を検索して選択すると、その事業の未発行が表示されます。\n"
             "チェックした項目をまとめて発行できます（同種別のみ合算可）。"
         ))
 
         search_row = QHBoxLayout()
         self._search = QLineEdit()
-        self._search.setPlaceholderText("会員番号・事業所名・フリガナ・代表者名")
+        self._search.setPlaceholderText("事業所名・フリガナ・代表者名")
         self._timer = QTimer()
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._search_member)
@@ -40,7 +41,7 @@ class IssuanceCrossMemberWidget(QWidget):
         layout.addLayout(search_row)
 
         self._member_table = QTableWidget(0, 3)
-        self._member_table.setHorizontalHeaderLabels(["会員番号", "事業所名", "代表者名"])
+        self._member_table.setHorizontalHeaderLabels(["事業名", "事業所名", "代表者名"])
         self._member_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch)
         self._member_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -48,7 +49,7 @@ class IssuanceCrossMemberWidget(QWidget):
         self._member_table.currentCellChanged.connect(self._on_member_select)
         layout.addWidget(self._member_table)
 
-        layout.addWidget(QLabel("未発行一覧（全事業横断）："))
+        layout.addWidget(QLabel("未発行一覧："))
         self._pending_table = QTableWidget(0, 4)
         self._pending_table.setHorizontalHeaderLabels(
             ["選択", "事業名", "書類種別", "金額"])
@@ -72,31 +73,44 @@ class IssuanceCrossMemberWidget(QWidget):
         query = self._search.text().strip()
         if not query:
             return
+        q = query.lower()
         session = get_session()
         try:
-            members = search_members(session, query)[:10]
+            results = []  # (pm_id, project_name, org, rep)
+            for proj in get_projects(session, status="active"):
+                for pm in get_project_members(session, proj.id):
+                    hay = " ".join([pm.organization_name or "", pm.representative_name or "",
+                                    pm.organization_kana or ""]).lower()
+                    if q in hay:
+                        results.append((pm.id, proj.name,
+                                        pm.organization_name, pm.representative_name))
+                        if len(results) >= 50:
+                            break
+                if len(results) >= 50:
+                    break
         finally:
             session.close()
         self._member_table.setRowCount(0)
-        for m in members:
+        for pm_id, proj_name, org, rep in results:
             row = self._member_table.rowCount()
             self._member_table.insertRow(row)
-            for col, val in enumerate([
-                m.member_number or "", m.organization_name, m.representative_name
-            ]):
+            for col, val in enumerate([proj_name or "", org or "", rep or ""]):
                 item = QTableWidgetItem(val)
-                item.setData(Qt.ItemDataRole.UserRole, m.id)
+                item.setData(Qt.ItemDataRole.UserRole, pm_id)
                 self._member_table.setItem(row, col, item)
 
     def _on_member_select(self, row, *_):
         if row < 0:
             return
-        member_id = self._member_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        item = self._member_table.item(row, 0)
+        if item is None:
+            return
+        pm_id = item.data(Qt.ItemDataRole.UserRole)
         session = get_session()
         try:
-            from app.database.models import Member
-            self._member = session.get(Member, member_id)
-            pending = get_pending_issuances_for_project_member(session, member_id)
+            from app.database.models import ProjectMember
+            self._pm = session.get(ProjectMember, pm_id)
+            pending = get_pending_issuances_for_project_member(session, pm_id)
             self._pending_table.setRowCount(0)
             for iss in pending:
                 proj = get_project_by_id(session, iss.project_id)
@@ -118,8 +132,8 @@ class IssuanceCrossMemberWidget(QWidget):
             session.close()
 
     def _issue(self):
-        if self._member is None:
-            QMessageBox.warning(self, "エラー", "会員を選択してください。")
+        if self._pm is None:
+            QMessageBox.warning(self, "エラー", "名簿から会員を選択してください。")
             return
         invoice_items = []
         receipt_items = []
@@ -152,8 +166,8 @@ class IssuanceCrossMemberWidget(QWidget):
                     session,
                     issuances_data=items,
                     doc_type=doc_type,
-                    recipient_organization=self._member.organization_name,
-                    recipient_name=self._member.representative_name,
+                    recipient_organization=self._pm.organization_name,
+                    recipient_name=self._pm.representative_name,
                     fiscal_year=today.year,
                     month=today.month,
                     staff_id=current_user.get_id(),
