@@ -203,17 +203,20 @@ def _draw_one(c, issuance, company, seal_image, x0, y0, w, h,
     box_y    = cur + 1.2 * mm
     baseline = box_y + box_h * 0.35
 
+    # 金額ブロック（ラベル・¥・数字・グレーボックス）全体を中央寄りへシフト
+    AMT_SHIFT = 12 * mm
+
     # 「金額」ラベル ── 数字と下端をそろえる
     c.setFont(FONT_NORMAL, 13)
     c.setFillColor(black)
-    c.drawString(x0 + P + 11 * mm, baseline, "金額")
+    c.drawString(x0 + P + 11 * mm + AMT_SHIFT, baseline, "金額")
 
     # ¥・数値の絶対 x 位置（元のボックス基準から計算）
-    yen_abs_x = x0 + 22.5 * mm + 12 * mm   # = x0 + 34.5mm
-    num_abs_x = x0 + 22.5 * mm + 18 * mm   # = x0 + 40.5mm
+    yen_abs_x = x0 + 22.5 * mm + 12 * mm + AMT_SHIFT   # = x0 + 34.5mm + shift
+    num_abs_x = x0 + 22.5 * mm + 18 * mm + AMT_SHIFT   # = x0 + 40.5mm + shift
 
     # グレーボックス：左余白 20% 削除・右余白 50% 削除
-    orig_right_edge = x0 + 22.5 * mm + w * 0.60
+    orig_right_edge = x0 + 22.5 * mm + w * 0.60 + AMT_SHIFT
     right_gray = max(0.0, orig_right_edge - (num_abs_x + amt_sw))
     box_x = yen_abs_x - 12 * mm * 0.80     # 左余白 12mm → 9.6mm
     box_w = (num_abs_x + amt_sw + right_gray * 0.50) - box_x
@@ -229,7 +232,7 @@ def _draw_one(c, issuance, company, seal_image, x0, y0, w, h,
     # 収入印紙枠
     stamp_w = 18 * mm
     stamp_h = box_h * 1.3
-    stamp_x = x0 + w - stamp_w - P - 2 * mm
+    stamp_x = x0 + w - stamp_w - P - 5 * mm   # 右端から 3mm 追加で左へ
     stamp_y = box_y - (stamp_h - box_h) + 2 * mm
     c.setStrokeColor(C_STAMP_LINE)
     c.setLineWidth(0.5)
@@ -411,7 +414,7 @@ def _draw_company_info(c, company, seal_image, x0, y0, w, top):
         c.setFillColor(black)
 
     if co_name:
-        seal_left   = x0 + w - 22.5 * mm - P + 1 * mm
+        seal_left   = x0 + w - 22.5 * mm - P - 2 * mm   # 印鑑位置に合わせ 3mm 左へ
         name_max_w  = seal_left - (x0 + P) - 2 * mm
         name_fs     = 11
         while name_fs > 6 and stringWidth(co_name, FONT_BOLD, name_fs) > name_max_w:
@@ -446,7 +449,7 @@ def _draw_company_info(c, company, seal_image, x0, y0, w, top):
         if sz > 4 * mm:
             try:
                 c.drawImage(seal_image.path,
-                            x0 + w - sz - P + 1 * mm, seal_y - 2 * mm,
+                            x0 + w - sz - P - 2 * mm, seal_y - 2 * mm,   # 3mm 左へ
                             sz, sz, mask="auto", preserveAspectRatio=True)
             except Exception:
                 pass
