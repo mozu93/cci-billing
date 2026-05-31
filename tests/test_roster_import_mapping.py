@@ -1,10 +1,12 @@
-# tests/test_member_import_mapping.py
-"""会員マスタ取り込みの列マッピング（位置固定ではなく列を選んで対応づけ）のテスト。"""
+# tests/test_roster_import_mapping.py
+"""事業名簿向け取り込み（列マッピング）のテスト。"""
 from app.utils.excel_utils import (
     parse_tsv_text_raw, column_count, default_positional_mapping,
     guess_mapping_from_header, build_member_rows,
 )
 
+
+# ── excel_utils の純粋関数テスト（member_import_mapping から移管） ──────────
 
 def test_parse_tsv_text_raw_keeps_cells():
     raw = parse_tsv_text_raw("A-001\t○○商事\t田中\n\nB-002\t△△産業")
@@ -61,3 +63,23 @@ def test_build_member_rows_skips_header_and_required():
     assert rows[0]["organization_name"] == "○○商事"
 
 
+# ── RosterImportDialog のテスト ──────────────────────────────────────────────
+
+def test_roster_import_dialog_maps_rows(qtbot, memory_db):
+    from app.ui.roster_import import RosterImportDialog
+    dlg = RosterImportDialog(project_id=1)
+    qtbot.addWidget(dlg)
+    dlg._set_raw_rows([["○○商事", "田中", "t@example.com"]])
+    rows = dlg._mapped_rows()
+    assert len(rows) == 1
+    assert rows[0]["organization_name"] == "○○商事"
+
+
+def test_roster_import_excludes_member_number(qtbot, memory_db):
+    from app.ui.roster_import import RosterImportDialog
+    from app.utils.excel_utils import ROSTER_COLUMNS
+    dlg = RosterImportDialog(project_id=1)
+    qtbot.addWidget(dlg)
+    # マッピング対象に member_number が含まれない
+    assert "member_number" not in dlg._field_combos
+    assert "member_number" not in ROSTER_COLUMNS

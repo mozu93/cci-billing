@@ -2,16 +2,15 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QHeaderView, QMessageBox, QDialog,
-    QTextEdit, QFileDialog, QFormLayout, QLineEdit, QComboBox,
+    QFormLayout, QLineEdit, QComboBox,
     QDialogButtonBox
 )
 from PyQt6.QtCore import Qt
 from app.database.connection import get_session
 from app.services.project_service import (
     get_project_members, add_roster_entries, remove_member_from_project,
-    copy_roster_from_project, get_projects, get_project_by_id
+    copy_roster_from_project, get_projects
 )
-from app.utils.excel_utils import parse_tsv_text, parse_excel_file
 
 
 class RosterEntryDialog(QDialog):
@@ -131,13 +130,11 @@ class ProjectMemberPanel(QWidget):
         btn_edit.clicked.connect(self._edit_entry)
         btn_copy = QPushButton("他の事業からコピー")
         btn_copy.clicked.connect(self._copy_from_project)
-        btn_import = QPushButton("Excelインポート")
-        btn_import.clicked.connect(self._import)
-        btn_paste = QPushButton("貼り付けインポート")
-        btn_paste.clicked.connect(self._paste_import)
+        btn_import = QPushButton("取り込み（Excel/貼り付け）")
+        btn_import.clicked.connect(self._open_import)
         btn_del = QPushButton("削除")
         btn_del.clicked.connect(self._remove)
-        for b in [btn_add, btn_edit, btn_copy, btn_import, btn_paste, btn_del]:
+        for b in [btn_add, btn_edit, btn_copy, btn_import, btn_del]:
             btn_row.addWidget(b)
         btn_row.addStretch()
         layout.addLayout(btn_row)
@@ -229,40 +226,11 @@ class ProjectMemberPanel(QWidget):
                 session.close()
             self._load()
 
-    def _import(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Excelを選択", "", "Excel (*.xlsx *.xls)")
-        if not path:
-            return
-        try:
-            rows = parse_excel_file(path)
-            self._register_rows(rows)
-        except Exception as e:
-            QMessageBox.critical(self, "エラー", str(e))
-
-    def _paste_import(self):
-        dlg = QDialog(self)
-        dlg.setWindowTitle("貼り付けインポート")
-        dlg.resize(600, 200)
-        from PyQt6.QtWidgets import QVBoxLayout as VL
-        vl = VL(dlg)
-        te = QTextEdit()
-        te.setPlaceholderText("ExcelからコピーしてCtrl+Vで貼り付け")
-        vl.addWidget(te)
-        btn = QPushButton("インポート")
-        btn.clicked.connect(dlg.accept)
-        vl.addWidget(btn)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            rows = parse_tsv_text(te.toPlainText())
-            self._register_rows(rows)
-
-    def _register_rows(self, rows: list[dict]):
-        valid = [r for r in rows
-                 if r.get("organization_name") or r.get("representative_name")]
-        if valid:
-            add_roster_entries(get_session(), self._project_id, valid)
-        QMessageBox.information(self, "完了", f"{len(valid)} 件を追加しました。")
-        self._load()
+    def _open_import(self):
+        from app.ui.roster_import import RosterImportDialog
+        dlg = RosterImportDialog(self._project_id, self)
+        if dlg.exec():
+            self._load()
 
     def _remove(self):
         row = self._table.currentRow()

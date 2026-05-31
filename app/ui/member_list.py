@@ -7,7 +7,6 @@ from PyQt6.QtCore import Qt, QTimer
 from app.database.connection import get_session
 from app.services.member_service import search_members, deactivate_member
 from app.ui.member_form import MemberFormDialog
-from app.ui.member_import import MemberImportDialog
 
 
 class MemberListWidget(QWidget):
@@ -37,9 +36,7 @@ class MemberListWidget(QWidget):
         btn_edit.clicked.connect(self._edit)
         btn_del = QPushButton("無効化")
         btn_del.clicked.connect(self._deactivate)
-        btn_import = QPushButton("Excelインポート")
-        btn_import.clicked.connect(self._import)
-        for b in [btn_add, btn_edit, btn_del, btn_import]:
+        for b in [btn_add, btn_edit, btn_del]:
             btn_row.addWidget(b)
         btn_row.addStretch()
         layout.addLayout(btn_row)
@@ -114,7 +111,3 @@ class MemberListWidget(QWidget):
             session.close()
         self._load(self._search.text())
 
-    def _import(self):
-        dlg = MemberImportDialog(parent=self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            self._load(self._search.text())

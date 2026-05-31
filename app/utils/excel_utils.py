@@ -13,6 +13,8 @@ MEMBER_COLUMNS = [
     "email",
 ]
 
+ROSTER_COLUMNS = [c for c in MEMBER_COLUMNS if c != "member_number"]
+
 # 取り込み先フィールド → 日本語ラベル（MEMBER_COLUMNS と同順）
 FIELD_LABELS = {
     "member_number": "会員番号",

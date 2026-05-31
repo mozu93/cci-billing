@@ -1,24 +1,51 @@
-# app/ui/member_import.py
+# app/ui/roster_import.py
+"""事業名簿向けの取り込みダイアログ（列マッピング方式）。
+
+member_import.MemberImportDialog をベースに、
+- マッピング対象を ROSTER_COLUMNS（member_number を除く8項目）に変更
+- 取り込み先を会員マスタではなく事業名簿（add_roster_entries）に変更
+"""
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QTextEdit,
     QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
     QMessageBox, QHeaderView, QComboBox, QCheckBox, QGroupBox
 )
 from app.database.connection import get_session
-from app.services.member_service import create_member
 from app.utils.excel_utils import (
-    MEMBER_COLUMNS, FIELD_LABELS, REQUIRED_ANY,
+    ROSTER_COLUMNS, FIELD_LABELS, REQUIRED_ANY,
     parse_tsv_text_raw, parse_excel_file_raw, column_count,
-    default_positional_mapping, guess_mapping_from_header, build_member_rows,
+    guess_mapping_from_header, build_member_rows,
 )
 
-HEADERS = [FIELD_LABELS[c] for c in MEMBER_COLUMNS]
+HEADERS = [FIELD_LABELS[c] for c in ROSTER_COLUMNS]
 
 
-class MemberImportDialog(QDialog):
-    def __init__(self, parent=None):
+def _default_positional_mapping_roster(num_cols: int) -> dict[str, int | None]:
+    """ROSTER_COLUMNS 基準で左から順に割り当てた初期マッピング。
+    （MEMBER_COLUMNS 基準の default_positional_mapping は列0=member_number なので使えない。）
+    """
+    return {field: (i if i < num_cols else None)
+            for i, field in enumerate(ROSTER_COLUMNS)}
+
+
+def _guess_mapping_from_header_roster(header_cells: list[str]) -> dict[str, int | None]:
+    """見出し行の文字列から ROSTER_COLUMNS のフィールドを推測して割り当てる。"""
+    label_to_field = {FIELD_LABELS[f]: f for f in ROSTER_COLUMNS}
+    mapping: dict[str, int | None] = {field: None for field in ROSTER_COLUMNS}
+    for i, raw in enumerate(header_cells):
+        h = (raw or "").strip()
+        if h in label_to_field:
+            mapping[label_to_field[h]] = i
+        elif h in ROSTER_COLUMNS:
+            mapping[h] = i
+    return mapping
+
+
+class RosterImportDialog(QDialog):
+    def __init__(self, project_id: int, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("会員インポート")
+        self._project_id = project_id
+        self.setWindowTitle("名簿の取り込み")
         self.resize(820, 680)
         self._raw_rows: list[list[str]] = []
         self._field_combos: dict[str, QComboBox] = {}
@@ -53,7 +80,7 @@ class MemberImportDialog(QDialog):
         self._header_chk.stateChanged.connect(self._on_header_toggle)
         map_layout.addWidget(self._header_chk, 0, 0, 1, 4)
 
-        for n, field in enumerate(MEMBER_COLUMNS):
+        for n, field in enumerate(ROSTER_COLUMNS):
             r = 1 + n // 2
             c = (n % 2) * 2
             label = FIELD_LABELS[field]
@@ -67,7 +94,7 @@ class MemberImportDialog(QDialog):
 
         note = QLabel("※「事業所名」「代表者名」のいずれかが必要です。")
         note.setStyleSheet("color: #666; font-size: 11px;")
-        map_layout.addWidget(note, 1 + (len(MEMBER_COLUMNS) + 1) // 2, 0, 1, 4)
+        map_layout.addWidget(note, 1 + (len(ROSTER_COLUMNS) + 1) // 2, 0, 1, 4)
         self._map_group.setEnabled(False)
         layout.addWidget(self._map_group)
 
@@ -85,7 +112,7 @@ class MemberImportDialog(QDialog):
         btn_row2 = QHBoxLayout()
         btn_cancel = QPushButton("キャンセル")
         btn_cancel.clicked.connect(self.reject)
-        self._btn_import = QPushButton("インポート実行")
+        self._btn_import = QPushButton("取り込み実行")
         self._btn_import.setEnabled(False)
         self._btn_import.clicked.connect(self._import)
         btn_row2.addWidget(btn_cancel)
@@ -130,9 +157,9 @@ class MemberImportDialog(QDialog):
         sample = self._raw_rows[0] if self._raw_rows else []
         has_header = self._header_chk.isChecked()
         if has_header and self._raw_rows:
-            guessed = guess_mapping_from_header(self._raw_rows[0])
+            guessed = _guess_mapping_from_header_roster(self._raw_rows[0])
         else:
-            guessed = default_positional_mapping(num_cols)
+            guessed = _default_positional_mapping_roster(num_cols)
 
         for field, combo in self._field_combos.items():
             combo.blockSignals(True)
@@ -170,27 +197,14 @@ class MemberImportDialog(QDialog):
         for row in rows:
             r = self._table.rowCount()
             self._table.insertRow(r)
-            for c, col in enumerate(MEMBER_COLUMNS):
+            for c, col in enumerate(ROSTER_COLUMNS):
                 self._table.setItem(r, c, QTableWidgetItem(row.get(col, "")))
         self._status_label.setText(f"取り込み対象：{len(rows)} 件")
         self._btn_import.setEnabled(len(rows) > 0)
 
     def _import(self):
         rows = self._mapped_rows()
-        session = get_session()
-        imported = 0
-        errors = []
-        try:
-            for row in rows:
-                try:
-                    create_member(session, **row)
-                    imported += 1
-                except Exception as e:
-                    errors.append(f"{row.get('organization_name', '?')}: {e}")
-        finally:
-            session.close()
-        msg = f"{imported} 件をインポートしました。"
-        if errors:
-            msg += f"\n失敗 {len(errors)} 件：\n" + "\n".join(errors[:5])
-        QMessageBox.information(self, "インポート完了", msg)
+        from app.services.project_service import add_roster_entries
+        add_roster_entries(get_session(), self._project_id, rows)
+        QMessageBox.information(self, "インポート完了", f"{len(rows)} 件を追加しました。")
         self.accept()
