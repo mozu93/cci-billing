@@ -9,7 +9,7 @@ from PyQt6.QtCore import Qt, QTimer
 from app.database.connection import get_session
 from app.services.member_service import search_members
 from app.services.issuance_service import (
-    get_pending_issuances_for_member, create_combined_issuance
+    get_pending_issuances_for_project_member, create_combined_issuance
 )
 from app.services.project_service import get_project_by_id
 from app.utils import current_user
@@ -96,7 +96,7 @@ class IssuanceCrossMemberWidget(QWidget):
         try:
             from app.database.models import Member
             self._member = session.get(Member, member_id)
-            pending = get_pending_issuances_for_member(session, member_id)
+            pending = get_pending_issuances_for_project_member(session, member_id)
             self._pending_table.setRowCount(0)
             for iss in pending:
                 proj = get_project_by_id(session, iss.project_id)
