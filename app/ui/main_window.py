@@ -1,5 +1,5 @@
 # app/ui/main_window.py
-from PyQt6.QtWidgets import QMainWindow, QTabWidget, QLabel
+from PyQt6.QtWidgets import QMainWindow, QTabWidget
 from PyQt6.QtCore import pyqtSignal
 
 
@@ -9,20 +9,23 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("商工会議所請求書・領収書発行システム")
-        self.resize(1200, 800)
+        self.resize(780, 800)
         self._build_tabs()
 
     def _build_tabs(self):
         tabs = QTabWidget()
 
+        from app.ui.counter_issuance_tab import CounterIssuanceTab
+        tabs.addTab(CounterIssuanceTab(), "窓口発行")
+
+        from app.ui.batch_issuance_tab import BatchIssuanceTab
+        tabs.addTab(BatchIssuanceTab(), "まとめて発行")
+
+        from app.ui.reissue_tab import ReissueWidget
+        tabs.addTab(ReissueWidget(), "再発行")
+
         from app.ui.dashboard import DashboardWidget
         tabs.addTab(DashboardWidget(), "ダッシュボード")
-
-        from app.ui.project_tab import ProjectTab
-        tabs.addTab(ProjectTab(), "事業管理")
-
-        from app.ui.issuance_tab import IssuanceTab
-        tabs.addTab(IssuanceTab(), "発行")
 
         from app.ui.report_tab import ReportTab
         tabs.addTab(ReportTab(), "レポート")
@@ -30,4 +33,5 @@ class MainWindow(QMainWindow):
         from app.ui.settings_tab import SettingsTab
         tabs.addTab(SettingsTab(), "設定")
 
+        tabs.setCurrentIndex(0)
         self.setCentralWidget(tabs)
