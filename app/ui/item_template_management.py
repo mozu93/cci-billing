@@ -117,7 +117,8 @@ class ItemTemplateManagementWidget(QWidget):
 
 
 class ItemTemplateDialog(QDialog):
-    def __init__(self, parent=None, template: ItemTemplate | None = None):
+    def __init__(self, parent=None, template: ItemTemplate | None = None,
+                 default_category_id: int | None = None):
         super().__init__(parent)
         self._template = template
         self.setWindowTitle("請求項目テンプレート編集" if template else "請求項目テンプレート登録")
@@ -125,6 +126,10 @@ class ItemTemplateDialog(QDialog):
         self._build()
         if template:
             self._populate(template)
+        elif default_category_id is not None:
+            idx = self._category.findData(default_category_id)
+            if idx >= 0:
+                self._category.setCurrentIndex(idx)
 
     def _build(self):
         layout = QVBoxLayout(self)

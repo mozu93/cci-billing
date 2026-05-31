@@ -56,6 +56,9 @@ class ProjectFormDialog(QDialog):
         btn_add_tmpl = QPushButton("→ 追加")
         btn_add_tmpl.clicked.connect(self._add_template)
         left.addWidget(btn_add_tmpl)
+        btn_new_tmpl = QPushButton("＋ 新規テンプレート…")
+        btn_new_tmpl.clicked.connect(self._add_template_master)
+        left.addWidget(btn_new_tmpl)
 
         right = QVBoxLayout()
         right.addWidget(QLabel("この事業で使用するテンプレート："))
@@ -116,6 +119,13 @@ class ProjectFormDialog(QDialog):
         row = self._selected_list.currentRow()
         if row >= 0:
             self._selected_list.takeItem(row)
+
+    def _add_template_master(self):
+        """その場で新規テンプレートをマスタ登録し、利用可能一覧へ反映する。"""
+        from app.ui.item_template_management import ItemTemplateDialog
+        dlg = ItemTemplateDialog(self, default_category_id=self._category.currentData())
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._on_category_change(None)
 
     def _load(self, project_id: int):
         session = get_session()

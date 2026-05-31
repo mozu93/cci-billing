@@ -139,6 +139,14 @@ class IssuanceCounterWidget(QWidget):
             return self._templates
         return [t for t in self._templates if t.category_id == cat_id]
 
+    def _add_template_master(self):
+        """その場で新規テンプレートをマスタ登録し、選択肢に反映する。"""
+        from PyQt6.QtWidgets import QDialog
+        from app.ui.item_template_management import ItemTemplateDialog
+        dlg = ItemTemplateDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._reload_master()
+
     # ── UI構築 ───────────────────────────────────────────
 
     def _build(self):
@@ -203,10 +211,16 @@ class IssuanceCounterWidget(QWidget):
         scroll.setWidget(self._rows_container)
         lines_layout.addWidget(scroll)
 
+        add_btn_row = QHBoxLayout()
         btn_add = QPushButton("＋ 項目を追加")
         btn_add.setFixedHeight(32)
         btn_add.clicked.connect(self._add_row)
-        lines_layout.addWidget(btn_add)
+        add_btn_row.addWidget(btn_add)
+        btn_new_tmpl = QPushButton("＋ 新規テンプレート…")
+        btn_new_tmpl.setFixedHeight(32)
+        btn_new_tmpl.clicked.connect(self._add_template_master)
+        add_btn_row.addWidget(btn_new_tmpl)
+        lines_layout.addLayout(add_btn_row)
         layout.addWidget(grp_lines)
 
         # ── 合計 + 発行ボタン ────────────────────────────
