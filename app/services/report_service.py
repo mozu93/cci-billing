@@ -18,18 +18,14 @@ def get_unpaid_report(session: Session,
 
     rows = []
     for iss, proj in q.all():
-        member = None
-        if iss.project_member_id:
-            pm = session.get(ProjectMember, iss.project_member_id)
-            if pm:
-                member = pm.member
+        pm = session.get(ProjectMember, iss.project_member_id) if iss.project_member_id else None
         rows.append({
             "doc_number":          iss.doc_number,
             "project_name":        proj.name,
             "fiscal_year":         proj.fiscal_year,
-            "organization_name":   iss.recipient_organization or (member.organization_name if member else ""),
-            "representative_name": iss.recipient_name or (member.representative_name if member else ""),
-            "member_number":       member.member_number if member else "",
+            "organization_name":   iss.recipient_organization or (pm.organization_name if pm else ""),
+            "representative_name": iss.recipient_name or (pm.representative_name if pm else ""),
+            "member_number":       "",
             "amount":              int(iss.amount),
             "status":              iss.status,
             "doc_type":            iss.doc_type,

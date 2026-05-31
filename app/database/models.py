@@ -173,10 +173,16 @@ class ProjectMember(Base):
     __tablename__ = "project_members"
     id = Column(Integer, primary_key=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
-    member_id = Column(Integer, ForeignKey("members_master.id"), nullable=True)
+    organization_name = Column(String(200), default="")
+    organization_kana = Column(String(200), default="")
+    representative_name = Column(String(100), default="")
+    representative_kana = Column(String(100), default="")
+    postal_code = Column(String(10), default="")
+    address = Column(String(300), default="")
+    phone = Column(String(50), default="")
+    email = Column(String(200), default="")
+    notes = Column(Text, default="")
     sort_order = Column(Integer, default=0)
-
-    member = relationship("Member")
 
 
 class Issuance(Base):

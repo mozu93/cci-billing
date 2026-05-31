@@ -2,7 +2,7 @@
 from datetime import datetime, date
 from sqlalchemy.orm import Session
 from app.database.models import (
-    Issuance, IssuanceLine, Payment, ProjectTemplate, ProjectMember, Member
+    Issuance, IssuanceLine, Payment, ProjectTemplate, ProjectMember
 )
 
 
@@ -48,7 +48,9 @@ def _build_lines_from_project(session: Session, project_id: int,
 
 
 def create_issuance_for_member(session: Session, project_id: int,
-                                project_member_id: int, member: Member,
+                                project_member_id: int,
+                                recipient_organization: str,
+                                recipient_name: str,
                                 doc_type: str, fiscal_year: int,
                                 month: int) -> Issuance:
     doc_number = get_next_doc_number(session, doc_type, fiscal_year, month)
@@ -57,8 +59,8 @@ def create_issuance_for_member(session: Session, project_id: int,
     issuance = Issuance(
         project_id=project_id,
         project_member_id=project_member_id,
-        recipient_organization=member.organization_name,
-        recipient_name=member.representative_name,
+        recipient_organization=recipient_organization,
+        recipient_name=recipient_name,
         doc_type=doc_type,
         doc_number=doc_number,
         status="準備中",
@@ -242,14 +244,10 @@ def create_direct_issuance(session: Session, lines_data: list[dict],
     return issuance
 
 
-def get_pending_issuances_for_member(session: Session,
-                                     member_id: int) -> list[Issuance]:
-    pm_ids = [pm.id for pm in
-              session.query(ProjectMember).filter_by(member_id=member_id).all()]
-    if not pm_ids:
-        return []
+def get_pending_issuances_for_project_member(session: Session,
+                                             project_member_id: int) -> list[Issuance]:
     return (session.query(Issuance)
-            .filter(Issuance.project_member_id.in_(pm_ids),
+            .filter(Issuance.project_member_id == project_member_id,
                     Issuance.status == "準備中")
             .all())
 

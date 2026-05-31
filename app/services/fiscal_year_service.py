@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.database.models import Project
 from app.services.project_service import (
     get_project_by_id, get_project_templates, get_project_members,
-    add_template_to_project, add_members_to_project
+    add_template_to_project, copy_roster_from_project
 )
 
 
@@ -41,10 +41,7 @@ def rollover_fiscal_year(session: Session,
             )
 
         if keep_members.get(pid, True):
-            old_pms = get_project_members(session, pid)
-            member_ids = [pm.member_id for pm in old_pms if pm.member_id]
-            if member_ids:
-                add_members_to_project(session, new_proj.id, member_ids)
+            copy_roster_from_project(session, pid, new_proj.id)
 
         new_projects.append(new_proj)
 

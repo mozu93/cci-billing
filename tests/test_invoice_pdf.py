@@ -2,9 +2,8 @@
 import os, tempfile
 from app.services.category_service import create_category
 from app.services.item_template_service import create_item_template
-from app.services.member_service import create_member
 from app.services.project_service import (
-    create_project, add_template_to_project, add_members_to_project,
+    create_project, add_template_to_project, add_roster_entries,
     get_project_members
 )
 from app.services.issuance_service import create_issuance_for_member
@@ -18,14 +17,18 @@ def _make_issuance(db_session):
                                 10000, "式", 0, "invoice", "")
     proj = create_project(db_session, "2026年度 青年部会費", cat.id, 2026, "list")
     add_template_to_project(db_session, proj.id, tmpl.id)
-    m = create_member(db_session, member_number="A-001",
-                      organization_name="○○商事株式会社",
-                      organization_kana="マルマルショウジ",
-                      representative_name="田中 太郎")
-    add_members_to_project(db_session, proj.id, [m.id])
+    add_roster_entries(db_session, proj.id, [
+        {"organization_name": "○○商事株式会社",
+         "organization_kana": "マルマルショウジ",
+         "representative_name": "田中 太郎"},
+    ])
     pm = get_project_members(db_session, proj.id)[0]
     return create_issuance_for_member(
-        db_session, proj.id, pm.id, m, "invoice", 2026, 5)
+        db_session, proj.id, pm.id,
+        recipient_organization=pm.organization_name,
+        recipient_name=pm.representative_name,
+        doc_type="invoice", fiscal_year=2026, month=5
+    )
 
 
 def test_generate_invoice_pdf(db_session):

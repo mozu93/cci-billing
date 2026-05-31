@@ -86,25 +86,49 @@ def get_project_templates(session: Session, project_id: int) -> list[ProjectTemp
             .all())
 
 
-def add_members_to_project(session: Session, project_id: int,
-                            member_ids: list[int]) -> list[ProjectMember]:
-    existing = {pm.member_id for pm in
-                session.query(ProjectMember).filter_by(project_id=project_id).all()}
+def add_roster_entries(session: Session, project_id: int,
+                       entries: list[dict]) -> list[ProjectMember]:
+    base = session.query(ProjectMember).filter_by(project_id=project_id).count()
     pms = []
-    for i, mid in enumerate(member_ids):
-        if mid in existing:
-            continue
-        pm = ProjectMember(project_id=project_id, member_id=mid, sort_order=i)
+    for i, e in enumerate(entries):
+        pm = ProjectMember(
+            project_id=project_id,
+            organization_name=e.get("organization_name", ""),
+            organization_kana=e.get("organization_kana", ""),
+            representative_name=e.get("representative_name", ""),
+            representative_kana=e.get("representative_kana", ""),
+            postal_code=e.get("postal_code", ""),
+            address=e.get("address", ""),
+            phone=e.get("phone", ""),
+            email=e.get("email", ""),
+            notes=e.get("notes", ""),
+            sort_order=base + i,
+        )
         session.add(pm)
         pms.append(pm)
     session.commit()
     return pms
 
 
+def copy_roster_from_project(session: Session, src_project_id: int,
+                             dst_project_id: int) -> list[ProjectMember]:
+    src = get_project_members(session, src_project_id)
+    entries = [{
+        "organization_name": p.organization_name,
+        "organization_kana": p.organization_kana,
+        "representative_name": p.representative_name,
+        "representative_kana": p.representative_kana,
+        "postal_code": p.postal_code,
+        "address": p.address,
+        "phone": p.phone,
+        "email": p.email,
+        "notes": p.notes,
+    } for p in src]
+    return add_roster_entries(session, dst_project_id, entries)
+
+
 def get_project_members(session: Session, project_id: int) -> list[ProjectMember]:
-    from sqlalchemy.orm import joinedload
     return (session.query(ProjectMember)
-            .options(joinedload(ProjectMember.member))
             .filter_by(project_id=project_id)
             .order_by(ProjectMember.sort_order)
             .all())

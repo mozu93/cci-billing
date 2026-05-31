@@ -27,14 +27,15 @@ def generate_batch_pdf(session, project_id: int, company: CompanySettings,
                .order_by(Issuance.created_at.desc())
                .first())
         if iss is None:
-            m = pm.member
-            if not m:
+            if not pm.organization_name and not pm.representative_name:
                 continue
             iss = create_issuance_for_member(
                 session, project_id=project_id,
                 project_member_id=pm.id,
-                member=m, doc_type=doc_type,
-                fiscal_year=today.year, month=today.month
+                recipient_organization=pm.organization_name,
+                recipient_name=pm.representative_name,
+                doc_type=doc_type,
+                fiscal_year=today.year, month=today.month,
             )
         path = os.path.join(output_dir, f"{iss.doc_number}.pdf")
         if doc_type == "invoice":
