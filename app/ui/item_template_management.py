@@ -41,7 +41,7 @@ class ItemTemplateManagementWidget(QWidget):
 
         self._table = QTableWidget(0, 6)
         self._table.setHorizontalHeaderLabels(
-            ["カテゴリ", "項目名", "単価", "単位", "税区分", "書類種別"])
+            ["業務名", "項目名", "単価", "単位", "税区分", "書類種別"])
         hdr = self._table.horizontalHeader()
         for col in range(6):
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
@@ -157,7 +157,7 @@ class ItemTemplateDialog(QDialog):
         self._description = QLineEdit()
         self._description.setPlaceholderText("但し書き（領収書に使用）")
 
-        form.addRow("カテゴリ", self._category)
+        form.addRow("業務名", self._category)
         form.addRow("項目名", self._name)
         form.addRow("単価（円）", self._unit_price)
         form.addRow("単位", self._unit)
@@ -197,8 +197,8 @@ class ItemTemplateDialog(QDialog):
             return
         if self._category.currentData() is None:
             QMessageBox.warning(self, "入力エラー",
-                                "カテゴリが選択されていません。\n"
-                                "先に「設定→カテゴリ」でカテゴリを登録してください。")
+                                "業務名が選択されていません。\n"
+                                "先に「設定→業務名」で業務名を登録してください。")
             return
         session = get_session()
         try:

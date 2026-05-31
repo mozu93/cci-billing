@@ -21,7 +21,7 @@ class CategoryManagementWidget(QWidget):
 
         add_row = QHBoxLayout()
         self._name_input = QLineEdit()
-        self._name_input.setPlaceholderText("カテゴリ名（例：青年部）")
+        self._name_input.setPlaceholderText("業務名（例：青年部）")
         self._order_input = QSpinBox()
         self._order_input.setRange(0, 999)
         btn_add = QPushButton("追加")
@@ -58,7 +58,7 @@ class CategoryManagementWidget(QWidget):
     def _add(self):
         name = self._name_input.text().strip()
         if not name:
-            QMessageBox.warning(self, "入力エラー", "カテゴリ名を入力してください。")
+            QMessageBox.warning(self, "入力エラー", "業務名を入力してください。")
             return
         session = get_session()
         try:

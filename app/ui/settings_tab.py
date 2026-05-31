@@ -18,7 +18,7 @@ class SettingsTab(QWidget):
 
         inner.addTab(CompanySettingsWidget(), "発行元情報")
         inner.addTab(StaffManagementWidget(), "スタッフ管理")
-        inner.addTab(CategoryManagementWidget(), "カテゴリ")
+        inner.addTab(CategoryManagementWidget(), "業務名")
         inner.addTab(ItemTemplateManagementWidget(), "請求項目テンプレート")
         inner.addTab(MemberListWidget(), "会員マスタ")
         inner.addTab(EmailSettingsWidget(), "メール設定")

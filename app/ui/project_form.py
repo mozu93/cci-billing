@@ -40,7 +40,7 @@ class ProjectFormDialog(QDialog):
         self._notes = QTextEdit()
         self._notes.setFixedHeight(60)
 
-        form.addRow("カテゴリ（事業名）", self._category)
+        form.addRow("業務名（事業名）", self._category)
         form.addRow("年度", self._fiscal_year)
         form.addRow("種別", self._project_type)
         form.addRow("備考", self._notes)
@@ -152,7 +152,7 @@ class ProjectFormDialog(QDialog):
         cat_id = self._category.currentData()
         name = self._category.currentText().strip()
         if not name or cat_id is None:
-            QMessageBox.warning(self, "入力エラー", "カテゴリを選択してください。")
+            QMessageBox.warning(self, "入力エラー", "業務名を選択してください。")
             return
         if self._selected_list.count() == 0:
             QMessageBox.warning(self, "入力エラー", "テンプレートを1つ以上選択してください。")

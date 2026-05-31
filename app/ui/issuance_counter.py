@@ -30,7 +30,7 @@ _SS_FIELD = (
 
 
 class _LineRow(QFrame):
-    """発行項目1行（カテゴリ／項目／単価／数量／小計／削除）"""
+    """発行項目1行（業務名／項目／単価／数量／小計／削除）"""
 
     def __init__(self, panel: "IssuanceCounterWidget"):
         super().__init__()
@@ -46,7 +46,7 @@ class _LineRow(QFrame):
 
         style = panel._cell_style
 
-        # カテゴリ
+        # 業務名
         self.cat_combo = QComboBox()
         self.cat_combo.setFixedWidth(W_CAT)
         self.cat_combo.setFixedHeight(FIELD_H)
@@ -247,7 +247,7 @@ class IssuanceCounterWidget(QWidget):
         lay = QHBoxLayout(hdr)
         lay.setContentsMargins(6, 0, 6, 0)
         lay.setSpacing(6)
-        specs = [("カテゴリ", W_CAT), ("項目", None), ("単価（円）", W_PRICE),
+        specs = [("業務名", W_CAT), ("項目", None), ("単価（円）", W_PRICE),
                  ("数量", W_QTY), ("小計", W_SUB), ("", W_DEL)]
         for text, w in specs:
             lbl = QLabel(text)
@@ -266,7 +266,7 @@ class IssuanceCounterWidget(QWidget):
         cur = combo.currentData()
         combo.blockSignals(True)
         combo.clear()
-        combo.addItem("（カテゴリを選択）", None)
+        combo.addItem("（業務名を選択）", None)
         for c in self._categories:
             combo.addItem(c.name, c.id)
         if cur is not None:
@@ -375,7 +375,7 @@ class IssuanceCounterWidget(QWidget):
         if not lines_data:
             QMessageBox.warning(self, "エラー",
                                 "項目が選択されていません。\n"
-                                "各行でカテゴリと項目を選択してください。")
+                                "各行で業務名と項目を選択してください。")
             return
 
         seen = {}
