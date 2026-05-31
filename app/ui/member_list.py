@@ -1,7 +1,7 @@
 # app/ui/member_list.py
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QLineEdit, QLabel, QDialog, QHeaderView
+    QPushButton, QLineEdit, QLabel, QDialog, QHeaderView, QMessageBox
 )
 from PyQt6.QtCore import Qt, QTimer
 from app.database.connection import get_session
@@ -100,6 +100,12 @@ class MemberListWidget(QWidget):
     def _deactivate(self):
         member_id = self._selected_id()
         if member_id is None:
+            return
+        name = self._table.item(self._table.currentRow(), 1).text()
+        if QMessageBox.question(
+                self, "無効化の確認",
+                f"会員「{name}」を無効化します。\nよろしいですか？"
+        ) != QMessageBox.StandardButton.Yes:
             return
         session = get_session()
         try:

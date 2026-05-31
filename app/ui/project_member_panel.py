@@ -126,6 +126,12 @@ class ProjectMemberPanel(QWidget):
         if row < 0:
             return
         pm_id = self._table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        name = self._table.item(row, 1).text()
+        if QMessageBox.question(
+                self, "削除の確認",
+                f"会員「{name}」をこの事業の名簿から削除します。\nよろしいですか？"
+        ) != QMessageBox.StandardButton.Yes:
+            return
         session = get_session()
         try:
             remove_member_from_project(session, pm_id)

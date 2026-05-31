@@ -248,6 +248,12 @@ class CompanySettingsWidget(QWidget):
         if row < 0:
             return
         seal_id = self._seal_table.item(row, 0).data(0x0100)
+        label = self._seal_table.item(row, 0).text()
+        if QMessageBox.question(
+                self, "削除の確認",
+                f"印鑑画像「{label}」を削除します。\nよろしいですか？"
+        ) != QMessageBox.StandardButton.Yes:
+            return
         session = get_session()
         try:
             s = session.get(SealImage, seal_id)
@@ -268,6 +274,12 @@ class CompanySettingsWidget(QWidget):
         if row < 0:
             return
         bank_id = self._bank_table.item(row, 0).data(0x0100)
+        bank_name = self._bank_table.item(row, 1).text()
+        if QMessageBox.question(
+                self, "削除の確認",
+                f"口座「{bank_name}」を削除します。\nよろしいですか？"
+        ) != QMessageBox.StandardButton.Yes:
+            return
         session = get_session()
         try:
             b = session.get(BankAccount, bank_id)

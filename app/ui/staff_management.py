@@ -86,6 +86,12 @@ class StaffManagementWidget(QWidget):
         staff_id = self._selected_id()
         if staff_id is None:
             return
+        name = self._table.item(self._table.currentRow(), 1).text()
+        if QMessageBox.question(
+                self, "無効化の確認",
+                f"スタッフ「{name}」を無効化します。\nよろしいですか？"
+        ) != QMessageBox.StandardButton.Yes:
+            return
         session = get_session()
         try:
             deactivate_staff(session, staff_id)

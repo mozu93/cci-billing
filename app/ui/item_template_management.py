@@ -108,6 +108,12 @@ class ItemTemplateManagementWidget(QWidget):
             QMessageBox.information(self, "未選択", "無効化するテンプレートを選択してください。")
             return
         tmpl_id = self._table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        name = self._table.item(row, 1).text()
+        if QMessageBox.question(
+                self, "無効化の確認",
+                f"テンプレート「{name}」を無効化します。\nよろしいですか？"
+        ) != QMessageBox.StandardButton.Yes:
+            return
         session = get_session()
         try:
             deactivate_item_template(session, tmpl_id)
