@@ -19,7 +19,7 @@ def create_project(session: Session, name: str, category_id: int,
 
 def get_projects(session: Session, fiscal_year: int | None = None,
                  status: str | None = None) -> list[Project]:
-    q = session.query(Project)
+    q = session.query(Project).filter(Project.project_type != "counter")
     if fiscal_year is not None:
         q = q.filter(Project.fiscal_year == fiscal_year)
     if status is not None:

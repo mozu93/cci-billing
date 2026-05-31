@@ -1,157 +1,406 @@
 # app/ui/issuance_counter.py
 from datetime import date
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
+    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
     QLineEdit, QSpinBox, QComboBox, QLabel, QPushButton,
-    QMessageBox, QGroupBox
+    QMessageBox, QFrame, QScrollArea, QStyleFactory
 )
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIntValidator
 from app.database.connection import get_session
-from app.services.project_service import get_projects, get_project_by_id
-from app.services.issuance_service import create_counter_issuance
+from app.services.category_service import get_active_categories
+from app.services.item_template_service import get_all_active_templates
+from app.services.issuance_service import create_direct_issuance
 from app.utils import current_user
+
+# 列幅・行高（px）
+W_CAT   = 150
+W_PRICE = 90
+W_QTY   = 80
+W_SUB   = 90
+W_DEL   = 40
+ROW_H   = 48
+FIELD_H = 26
+
+_SS_FIELD = (
+    "QComboBox, QLineEdit, QSpinBox {"
+    " border: 1px solid #b5b5b5; border-radius: 3px;"
+    " padding: 1px 4px; background: white; }"
+)
+
+
+class _LineRow(QFrame):
+    """発行項目1行（カテゴリ／項目／単価／数量／小計／削除）"""
+
+    def __init__(self, panel: "IssuanceCounterWidget"):
+        super().__init__()
+        self.panel = panel
+        self.setFixedHeight(ROW_H)
+        self.setObjectName("LineRow")
+        self.setStyleSheet(
+            "#LineRow { border-bottom: 1px solid #e2e2e2; background: white; }")
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(6, 3, 6, 3)
+        lay.setSpacing(6)
+
+        style = panel._cell_style
+
+        # カテゴリ
+        self.cat_combo = QComboBox()
+        self.cat_combo.setFixedWidth(W_CAT)
+        self.cat_combo.setFixedHeight(FIELD_H)
+        # 項目
+        self.tmpl_combo = QComboBox()
+        self.tmpl_combo.setFixedHeight(FIELD_H)
+        self.tmpl_combo.addItem("（項目を選択）", None)
+        # 単価
+        self.price_edit = QLineEdit("0")
+        self.price_edit.setFixedWidth(W_PRICE)
+        self.price_edit.setFixedHeight(FIELD_H)
+        self.price_edit.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.price_edit.setValidator(QIntValidator(0, 99_999_999, self))
+        # 数量
+        self.qty_spin = QSpinBox()
+        self.qty_spin.setFixedWidth(W_QTY)
+        self.qty_spin.setFixedHeight(FIELD_H)
+        self.qty_spin.setRange(1, 9999)
+        self.qty_spin.setValue(1)
+        # 小計
+        self.sub_label = QLabel("¥0")
+        self.sub_label.setFixedWidth(W_SUB)
+        self.sub_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        # 削除
+        self.btn_del = QPushButton("✕")
+        self.btn_del.setFixedSize(W_DEL, FIELD_H)
+        self.btn_del.setStyleSheet(
+            "QPushButton { color: #cc4444; border: none;"
+            " background: transparent; font-weight: bold; }"
+            "QPushButton:hover { color: #ff0000; }")
+
+        for w in (self.cat_combo, self.tmpl_combo, self.price_edit, self.qty_spin):
+            if style:
+                w.setStyle(style)
+            w.setStyleSheet(_SS_FIELD)
+
+        lay.addWidget(self.cat_combo)
+        lay.addWidget(self.tmpl_combo, 1)
+        lay.addWidget(self.price_edit)
+        lay.addWidget(self.qty_spin)
+        lay.addWidget(self.sub_label)
+        lay.addWidget(self.btn_del)
+
+        # シグナル
+        self.cat_combo.currentIndexChanged.connect(
+            lambda: self.panel._on_cat_changed(self))
+        self.tmpl_combo.currentIndexChanged.connect(
+            lambda: self.panel._on_tmpl_changed(self))
+        self.price_edit.textChanged.connect(self.panel._update_total)
+        self.qty_spin.valueChanged.connect(self.panel._update_total)
+        self.btn_del.clicked.connect(lambda: self.panel._remove_row(self))
+
+    def price(self) -> int:
+        try:
+            return int(self.price_edit.text())
+        except (ValueError, TypeError):
+            return 0
 
 
 class IssuanceCounterWidget(QWidget):
     def __init__(self):
         super().__init__()
+        self._categories = []
+        self._templates  = []
+        self._rows: list[_LineRow] = []
+        self._cell_style = QStyleFactory.create("Fusion")
         self._build()
-        self._load_projects()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._reload_master()
+
+    # ── マスタ読み込み ───────────────────────────────────
+
+    def _reload_master(self):
+        session = get_session()
+        try:
+            self._categories = get_active_categories(session)
+            self._templates  = get_all_active_templates(session)
+        finally:
+            session.close()
+        for row in self._rows:
+            self._refresh_cat_combo(row.cat_combo)
+            self._refresh_tmpl_combo(row)
+
+    def _tmpls_for_cat(self, cat_id) -> list:
+        if cat_id is None:
+            return self._templates
+        return [t for t in self._templates if t.category_id == cat_id]
+
+    # ── UI構築 ───────────────────────────────────────────
 
     def _build(self):
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("窓口型事業：宛先・数量を入力して即発行します。"))
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(8)
 
-        form = QFormLayout()
-        self._proj_combo = QComboBox()
-        self._proj_combo.setMinimumWidth(300)
-        self._proj_combo.currentIndexChanged.connect(self._on_project_change)
+        # ── 上部2カラム ──────────────────────────────────
+        top_row = QHBoxLayout()
+        top_row.setSpacing(12)
+
+        grp_dest = QGroupBox("宛先")
+        form = QFormLayout(grp_dest)
+        form.setContentsMargins(10, 8, 10, 8)
+        form.setSpacing(8)
         self._org_name = QLineEdit()
         self._org_name.setPlaceholderText("事業所名（任意）")
         self._rep_name = QLineEdit()
-        self._rep_name.setPlaceholderText("代表者名・個人名（任意）")
-        self._quantity = QSpinBox()
-        self._quantity.setRange(1, 9999)
-        self._quantity.setValue(1)
-        self._quantity.valueChanged.connect(self._update_amount)
-        self._delivery_combo = QComboBox()
-        self._delivery_combo.addItems(["窓口手渡し", "郵送", "メール送付", "その他"])
+        self._rep_name.setPlaceholderText("代表者名・個人名（どちらか必須）")
+        form.addRow("事業所名",     self._org_name)
+        form.addRow("担当者・個人名", self._rep_name)
+        top_row.addWidget(grp_dest, 6)
 
-        form.addRow("事業", self._proj_combo)
-        form.addRow("事業所名", self._org_name)
-        form.addRow("代表者名/個人名", self._rep_name)
-        form.addRow("数量", self._quantity)
-        form.addRow("配付方法", self._delivery_combo)
-        layout.addLayout(form)
+        grp_opts = QGroupBox("発行設定")
+        opts_form = QFormLayout(grp_opts)
+        opts_form.setContentsMargins(10, 8, 10, 8)
+        opts_form.setSpacing(8)
+        self._doc_type = QComboBox()
+        self._doc_type.addItem("領収書", "receipt")
+        self._doc_type.addItem("請求書", "invoice")
+        self._delivery = QComboBox()
+        self._delivery.addItems(["窓口手渡し", "郵送", "メール送付", "その他"])
+        opts_form.addRow("書類種別", self._doc_type)
+        opts_form.addRow("配付方法", self._delivery)
+        fmt_note = QLabel("印刷形式：領収書 = A5縦　請求書 = A4（固定）")
+        fmt_note.setStyleSheet("color: #666; font-size: 11px;")
+        opts_form.addRow("", fmt_note)
+        top_row.addWidget(grp_opts, 4)
 
-        self._amount_label = QLabel("金額：¥0")
-        self._amount_label.setStyleSheet(
-            "font-size: 16px; font-weight: bold; color: #2563EB;")
-        layout.addWidget(self._amount_label)
+        layout.addLayout(top_row)
 
-        grp = QGroupBox("明細プレビュー")
-        grp_layout = QVBoxLayout(grp)
-        self._preview_label = QLabel("")
-        self._preview_label.setWordWrap(True)
-        grp_layout.addWidget(self._preview_label)
-        layout.addWidget(grp)
+        # ── 発行項目 ─────────────────────────────────────
+        grp_lines = QGroupBox("発行項目")
+        lines_layout = QVBoxLayout(grp_lines)
+        lines_layout.setContentsMargins(8, 8, 8, 8)
+        lines_layout.setSpacing(0)
 
-        btn = QPushButton("発行する")
-        btn.setFixedHeight(40)
-        btn.setStyleSheet("font-size: 14px; font-weight: bold;")
-        btn.clicked.connect(self._issue)
-        layout.addWidget(btn)
+        lines_layout.addWidget(self._make_header())
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setMinimumHeight(140)
+
+        self._rows_container = QWidget()
+        self._rows_container.setStyleSheet("background: white;")
+        self._rows_vbox = QVBoxLayout(self._rows_container)
+        self._rows_vbox.setContentsMargins(0, 0, 0, 2)
+        self._rows_vbox.setSpacing(0)
+        self._rows_vbox.addStretch()
+        scroll.setWidget(self._rows_container)
+        lines_layout.addWidget(scroll)
+
+        btn_add = QPushButton("＋ 項目を追加")
+        btn_add.setFixedHeight(32)
+        btn_add.clicked.connect(self._add_row)
+        lines_layout.addWidget(btn_add)
+        layout.addWidget(grp_lines)
+
+        # ── 合計 + 発行ボタン ────────────────────────────
+        self._total_label = QLabel("合計：¥0")
+        self._total_label.setStyleSheet(
+            "font-size: 18px; font-weight: bold; color: #1D4ED8; padding: 6px 2px;")
+        layout.addWidget(self._total_label)
+
+        self._btn_issue = QPushButton("発行する")
+        self._btn_issue.setFixedHeight(44)
+        self._btn_issue.setStyleSheet(
+            "font-size: 14px; font-weight: bold;"
+            "background: #1D4ED8; color: white; border-radius: 6px;")
+        self._btn_issue.clicked.connect(self._issue)
+        layout.addWidget(self._btn_issue)
         layout.addStretch()
 
-    def _load_projects(self):
-        session = get_session()
-        try:
-            projects = [p for p in get_projects(session, status="active")
-                        if p.project_type == "counter"]
-        finally:
-            session.close()
-        self._proj_combo.clear()
-        for p in projects:
-            self._proj_combo.addItem(p.name, p.id)
-        self._on_project_change()
+        self._add_row()
 
-    def _on_project_change(self):
-        self._update_amount()
-        self._update_preview()
+    def _make_header(self) -> QWidget:
+        hdr = QWidget()
+        hdr.setFixedHeight(30)
+        hdr.setStyleSheet("background: #eef1f5; border-bottom: 1px solid #d0d0d0;")
+        lay = QHBoxLayout(hdr)
+        lay.setContentsMargins(6, 0, 6, 0)
+        lay.setSpacing(6)
+        specs = [("カテゴリ", W_CAT), ("項目", None), ("単価（円）", W_PRICE),
+                 ("数量", W_QTY), ("小計", W_SUB), ("", W_DEL)]
+        for text, w in specs:
+            lbl = QLabel(text)
+            lbl.setStyleSheet("font-weight: bold; color: #333; background: transparent;")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            if w is None:
+                lay.addWidget(lbl, 1)
+            else:
+                lbl.setFixedWidth(w)
+                lay.addWidget(lbl)
+        return hdr
 
-    def _get_unit_price(self) -> int:
-        project_id = self._proj_combo.currentData()
-        if project_id is None:
-            return 0
-        session = get_session()
-        try:
-            from app.database.models import ProjectTemplate
-            pts = session.query(ProjectTemplate).filter_by(project_id=project_id).all()
-            return sum(int(pt.unit_price_override or pt.item_template.unit_price)
-                       for pt in pts)
-        finally:
-            session.close()
+    # ── コンボ更新ヘルパ ─────────────────────────────────
 
-    def _update_amount(self):
-        price = self._get_unit_price()
-        self._amount_label.setText(f"金額：¥{price * self._quantity.value():,}")
+    def _refresh_cat_combo(self, combo: QComboBox):
+        cur = combo.currentData()
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("（カテゴリを選択）", None)
+        for c in self._categories:
+            combo.addItem(c.name, c.id)
+        if cur is not None:
+            for i in range(combo.count()):
+                if combo.itemData(i) == cur:
+                    combo.setCurrentIndex(i)
+                    break
+        combo.blockSignals(False)
 
-    def _update_preview(self):
-        project_id = self._proj_combo.currentData()
-        if project_id is None:
-            self._preview_label.setText("")
+    def _refresh_tmpl_combo(self, row: _LineRow):
+        cat_id     = row.cat_combo.currentData()
+        cur_id     = row.tmpl_combo.currentData()
+        candidates = self._tmpls_for_cat(cat_id)
+        row.tmpl_combo.blockSignals(True)
+        row.tmpl_combo.clear()
+        row.tmpl_combo.addItem("（項目を選択）", None)
+        for t in candidates:
+            row.tmpl_combo.addItem(f"{t.name}　¥{int(t.unit_price):,}/{t.unit}", t.id)
+        restored = False
+        if cur_id is not None:
+            for i in range(row.tmpl_combo.count()):
+                if row.tmpl_combo.itemData(i) == cur_id:
+                    row.tmpl_combo.setCurrentIndex(i)
+                    restored = True
+                    break
+        if not restored:
+            row.tmpl_combo.setCurrentIndex(0)
+        row.tmpl_combo.blockSignals(False)
+
+    # ── 行操作 ──────────────────────────────────────────
+
+    def _add_row(self):
+        row = _LineRow(self)
+        self._refresh_cat_combo(row.cat_combo)
+        # stretch の直前に挿入
+        self._rows_vbox.insertWidget(self._rows_vbox.count() - 1, row)
+        self._rows.append(row)
+        self._update_total()
+
+    def _remove_row(self, row: _LineRow):
+        if row not in self._rows:
             return
-        session = get_session()
-        try:
-            from app.database.models import ProjectTemplate
-            pts = session.query(ProjectTemplate).filter_by(project_id=project_id).all()
-            lines = [f"・{pt.item_template.name}  "
-                     f"¥{int(pt.unit_price_override or pt.item_template.unit_price):,}"
-                     f"/{pt.item_template.unit}"
-                     for pt in pts]
-        finally:
-            session.close()
-        self._preview_label.setText("\n".join(lines))
+        self._rows.remove(row)
+        self._rows_vbox.removeWidget(row)
+        row.setParent(None)
+        row.deleteLater()
+        self._update_total()
+
+    # ── シグナルハンドラ ─────────────────────────────────
+
+    def _on_cat_changed(self, row: _LineRow):
+        self._refresh_tmpl_combo(row)
+        self._update_total()
+
+    def _on_tmpl_changed(self, row: _LineRow):
+        self._apply_template_to_row(row)
+
+    def _apply_template_to_row(self, row: _LineRow):
+        tmpl_id = row.tmpl_combo.currentData()
+        tmpl = next((t for t in self._templates if t.id == tmpl_id), None)
+        row.price_edit.setText(str(int(tmpl.unit_price)) if tmpl else "0")
+        self._update_total()
+
+    def _update_total(self):
+        total = 0
+        for row in self._rows:
+            sub = row.price() * row.qty_spin.value()
+            total += sub
+            row.sub_label.setText(f"¥{sub:,}")
+        self._total_label.setText(f"合計：¥{total:,}")
+
+    # ── 発行 ─────────────────────────────────────────────
 
     def _issue(self):
         org = self._org_name.text().strip()
         rep = self._rep_name.text().strip()
         if not org and not rep:
             QMessageBox.warning(self, "入力エラー",
-                                "事業所名または代表者名を入力してください。")
+                                "事業所名または担当者・個人名を入力してください。")
             return
-        project_id = self._proj_combo.currentData()
-        if project_id is None:
-            QMessageBox.warning(self, "エラー", "事業を選択してください。")
+        if not self._templates:
+            QMessageBox.warning(self, "テンプレート未登録",
+                                "請求項目テンプレートが登録されていません。\n"
+                                "設定 → 請求項目テンプレートから登録してください。")
             return
-        today = date.today()
-        session = get_session()
+        if not self._rows:
+            QMessageBox.warning(self, "入力エラー", "項目を1つ以上追加してください。")
+            return
+
+        lines_data = []
+        for row in self._rows:
+            tmpl_id = row.tmpl_combo.currentData()
+            tmpl    = next((t for t in self._templates if t.id == tmpl_id), None)
+            if tmpl is None:
+                continue
+            price = row.price() or int(tmpl.unit_price)
+            lines_data.append({
+                "item_template_id": tmpl.id,
+                "item_name":        tmpl.name,
+                "quantity":         row.qty_spin.value(),
+                "unit":             tmpl.unit,
+                "unit_price":       price,
+                "tax_rate":         tmpl.tax_rate,
+            })
+
+        if not lines_data:
+            QMessageBox.warning(self, "エラー",
+                                "項目が選択されていません。\n"
+                                "各行でカテゴリと項目を選択してください。")
+            return
+
+        seen = {}
+        for row in self._rows:
+            cat_id = row.cat_combo.currentData()
+            cat = next((c for c in self._categories if c.id == cat_id), None)
+            if cat and cat.name not in seen:
+                seen[cat.name] = True
+        project_name = "・".join(seen.keys()) if seen else "直接発行"
+
+        doc_type = self._doc_type.currentData()
+        fmt      = "a4" if doc_type == "invoice" else "a5"
+        today    = date.today()
+        session  = get_session()
         try:
-            from app.database.models import ProjectTemplate
-            pt = session.query(ProjectTemplate).filter_by(
-                project_id=project_id).first()
-            doc_type = "receipt"
-            if pt and pt.item_template.doc_type == "invoice":
-                doc_type = "invoice"
-            iss = create_counter_issuance(
+            iss = create_direct_issuance(
                 session,
-                project_id=project_id,
-                recipient_organization=org,
-                recipient_name=rep,
-                doc_type=doc_type,
-                quantity=self._quantity.value(),
-                fiscal_year=today.year,
-                month=today.month
+                lines_data             = lines_data,
+                recipient_organization = org,
+                recipient_name         = rep,
+                doc_type               = doc_type,
+                fiscal_year            = today.year,
+                month                  = today.month,
+                staff_id               = current_user.get_id(),
+                staff_name             = current_user.get_name(),
+                delivery_method        = self._delivery.currentText(),
+                project_name           = project_name,
             )
-            iss.staff_id = current_user.get_id()
-            iss.staff_name = current_user.get_name()
-            iss.delivery_method = self._delivery_combo.currentText()
-            session.commit()
             from app.utils.pdf_helpers import generate_and_open
-            generate_and_open(iss, session)
+            generate_and_open(iss, session, receipt_fmt=fmt)
         except Exception as e:
-            QMessageBox.critical(self, "PDF生成エラー", str(e))
+            QMessageBox.critical(self, "発行エラー", str(e))
+            return
         finally:
             session.close()
+
         self._org_name.clear()
         self._rep_name.clear()
-        self._quantity.setValue(1)
+        for row in list(self._rows):
+            self._remove_row(row)
+        self._add_row()
+        self._update_total()

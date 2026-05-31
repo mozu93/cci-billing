@@ -189,6 +189,59 @@ def record_payment(session: Session, issuance_id: int,
     session.commit()
 
 
+def create_direct_issuance(session: Session, lines_data: list[dict],
+                            recipient_organization: str, recipient_name: str,
+                            doc_type: str, fiscal_year: int, month: int,
+                            staff_id: int | None = None, staff_name: str = "",
+                            delivery_method: str = "窓口手渡し",
+                            project_name: str = "直接発行") -> Issuance:
+    from app.database.models import Project
+    sys_proj = (session.query(Project)
+                .filter_by(name=project_name, project_type="counter")
+                .first())
+    if not sys_proj:
+        sys_proj = Project(
+            name=project_name, fiscal_year=fiscal_year,
+            project_type="counter", status="active",
+        )
+        session.add(sys_proj)
+        session.flush()
+
+    doc_number = get_next_doc_number(session, doc_type, fiscal_year, month)
+    total = sum(int(l["unit_price"]) * int(l["quantity"]) for l in lines_data)
+    now = datetime.now()
+    issuance = Issuance(
+        project_id=sys_proj.id,
+        project_member_id=None,
+        recipient_organization=recipient_organization,
+        recipient_name=recipient_name,
+        doc_type=doc_type,
+        doc_number=doc_number,
+        status="発行済み",
+        amount=total,
+        issued_at=now,
+        staff_id=staff_id,
+        staff_name=staff_name,
+        delivery_method=delivery_method,
+    )
+    session.add(issuance)
+    session.flush()
+    for ld in lines_data:
+        session.add(IssuanceLine(
+            issuance_id=issuance.id,
+            item_template_id=ld.get("item_template_id"),
+            item_name=ld["item_name"],
+            quantity=ld["quantity"],
+            unit=ld["unit"],
+            unit_price=ld["unit_price"],
+            tax_rate=ld["tax_rate"],
+            line_total=int(ld["unit_price"]) * int(ld["quantity"]),
+        ))
+    session.commit()
+    session.refresh(issuance)
+    return issuance
+
+
 def get_pending_issuances_for_member(session: Session,
                                      member_id: int) -> list[Issuance]:
     pm_ids = [pm.id for pm in

@@ -72,15 +72,27 @@ class IssuanceFromProjectWidget(QWidget):
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._load_projects()
+
     def _load_projects(self):
         session = get_session()
         try:
             projects = get_projects(session, status="active")
         finally:
             session.close()
+        current_id = self._proj_combo.currentData()
+        self._proj_combo.blockSignals(True)
         self._proj_combo.clear()
         for p in projects:
             self._proj_combo.addItem(p.name, p.id)
+        if current_id is not None:
+            for i in range(self._proj_combo.count()):
+                if self._proj_combo.itemData(i) == current_id:
+                    self._proj_combo.setCurrentIndex(i)
+                    break
+        self._proj_combo.blockSignals(False)
         self._load_members()
 
     def _load_members(self):

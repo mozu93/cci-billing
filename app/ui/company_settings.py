@@ -2,10 +2,18 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QPushButton, QGroupBox, QTableWidget,
-    QTableWidgetItem, QMessageBox, QHeaderView, QDialog
+    QTableWidgetItem, QMessageBox, QHeaderView, QDialog,
+    QFileDialog, QLabel, QCheckBox
 )
+from PyQt6.QtCore import Qt
 from app.database.connection import get_session
-from app.database.models import CompanySettings, BankAccount
+from app.database.models import CompanySettings, BankAccount, SealImage
+
+
+def _ask_label(parent, title: str, prompt: str, default: str = "") -> tuple[str, bool]:
+    from PyQt6.QtWidgets import QInputDialog
+    text, ok = QInputDialog.getText(parent, title, prompt, text=default)
+    return text.strip() or default, ok
 
 
 def _get_or_create_settings(session) -> CompanySettings:
@@ -24,39 +32,59 @@ class CompanySettingsWidget(QWidget):
         self._load()
 
     def _build(self):
-        layout = QVBoxLayout(self)
+        root = QHBoxLayout(self)
+        root.setSpacing(12)
+
+        # ── 左カラム：発行元情報 ──────────────────────────
+        left = QVBoxLayout()
+        left.setSpacing(8)
 
         grp = QGroupBox("発行元情報")
         form = QFormLayout(grp)
-        self._name = QLineEdit()
-        self._postal = QLineEdit()
+        form.setSpacing(6)
+        self._name    = QLineEdit()
+        self._postal  = QLineEdit()
+        self._postal.setMaximumWidth(120)
         self._address = QLineEdit()
-        self._phone = QLineEdit()
-        self._fax = QLineEdit()
-        self._email = QLineEdit()
+        self._phone   = QLineEdit()
+        self._fax     = QLineEdit()
+        self._email   = QLineEdit()
         self._t_number = QLineEdit()
         self._t_number.setPlaceholderText("T1234567890123")
-        form.addRow("名称", self._name)
-        form.addRow("郵便番号", self._postal)
-        form.addRow("住所", self._address)
-        form.addRow("電話", self._phone)
-        form.addRow("FAX", self._fax)
-        form.addRow("メール", self._email)
+        form.addRow("名称",               self._name)
+        form.addRow("郵便番号",           self._postal)
+        form.addRow("住所",               self._address)
+        form.addRow("電話",               self._phone)
+        form.addRow("FAX",                self._fax)
+        form.addRow("メール",             self._email)
         form.addRow("インボイス登録番号", self._t_number)
-        layout.addWidget(grp)
+        left.addWidget(grp)
 
         btn_save = QPushButton("発行元情報を保存")
+        btn_save.setFixedHeight(34)
         btn_save.clicked.connect(self._save)
-        layout.addWidget(btn_save)
+        left.addWidget(btn_save)
+        left.addStretch()
 
+        root.addLayout(left, 4)   # 左4割
+
+        # ── 右カラム：銀行口座 ＋ 印鑑画像 ───────────────
+        right = QVBoxLayout()
+        right.setSpacing(10)
+
+        # 銀行口座
         grp2 = QGroupBox("銀行口座")
         bank_layout = QVBoxLayout(grp2)
+        bank_layout.setSpacing(6)
         self._bank_table = QTableWidget(0, 5)
         self._bank_table.setHorizontalHeaderLabels(
-            ["ラベル", "銀行名", "支店名", "口座種別", "口座番号"])
+            ["ラベル", "銀行名", "支店名", "種別", "口座番号"])
         self._bank_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch)
+            1, QHeaderView.ResizeMode.Stretch)
+        self._bank_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents)
         self._bank_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._bank_table.setMaximumHeight(150)
         bank_layout.addWidget(self._bank_table)
 
         bank_btn_row = QHBoxLayout()
@@ -68,7 +96,47 @@ class CompanySettingsWidget(QWidget):
         bank_btn_row.addWidget(btn_del_bank)
         bank_btn_row.addStretch()
         bank_layout.addLayout(bank_btn_row)
-        layout.addWidget(grp2)
+        right.addWidget(grp2)
+
+        # 印鑑画像
+        grp3 = QGroupBox("印鑑画像")
+        seal_layout = QVBoxLayout(grp3)
+        seal_layout.setSpacing(6)
+        seal_layout.addWidget(QLabel(
+            "PNG / JPG を登録。★デフォルトが領収書に印刷されます。"))
+        self._print_seal_chk = QCheckBox("印鑑を印字する（請求書・領収書共通）")
+        self._print_seal_chk.setChecked(True)
+        self._print_seal_chk.stateChanged.connect(self._save_seal_option)
+        seal_layout.addWidget(self._print_seal_chk)
+
+        self._seal_table = QTableWidget(0, 3)
+        self._seal_table.setHorizontalHeaderLabels(["ラベル", "ファイルパス", ""])
+        self._seal_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch)
+        self._seal_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents)
+        self._seal_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.ResizeToContents)
+        self._seal_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._seal_table.setMaximumHeight(150)
+        seal_layout.addWidget(self._seal_table)
+
+        seal_btn_row = QHBoxLayout()
+        btn_add_seal     = QPushButton("＋ 画像を登録")
+        btn_default_seal = QPushButton("★ デフォルトに設定")
+        btn_del_seal     = QPushButton("削除")
+        btn_add_seal.clicked.connect(self._add_seal)
+        btn_default_seal.clicked.connect(self._set_default_seal)
+        btn_del_seal.clicked.connect(self._del_seal)
+        seal_btn_row.addWidget(btn_add_seal)
+        seal_btn_row.addWidget(btn_default_seal)
+        seal_btn_row.addWidget(btn_del_seal)
+        seal_btn_row.addStretch()
+        seal_layout.addLayout(seal_btn_row)
+        right.addWidget(grp3)
+        right.addStretch()
+
+        root.addLayout(right, 6)   # 右6割
 
     def _load(self):
         session = get_session()
@@ -81,6 +149,10 @@ class CompanySettingsWidget(QWidget):
             self._fax.setText(cs.fax)
             self._email.setText(cs.email)
             self._t_number.setText(cs.invoice_reg_number)
+            self._print_seal_chk.blockSignals(True)
+            self._print_seal_chk.setChecked(
+                bool(cs.print_seal) if cs.print_seal is not None else True)
+            self._print_seal_chk.blockSignals(False)
             self._bank_table.setRowCount(0)
             for b in cs.bank_accounts:
                 row = self._bank_table.rowCount()
@@ -90,6 +162,16 @@ class CompanySettingsWidget(QWidget):
                     item = QTableWidgetItem(val)
                     item.setData(0x0100, b.id)
                     self._bank_table.setItem(row, col, item)
+
+            self._seal_table.setRowCount(0)
+            for s in cs.seal_images:
+                row = self._seal_table.rowCount()
+                self._seal_table.insertRow(row)
+                default_mark = "★ デフォルト" if s.is_default else ""
+                for col, val in enumerate([s.label, s.path, default_mark]):
+                    item = QTableWidgetItem(val)
+                    item.setData(0x0100, s.id)
+                    self._seal_table.setItem(row, col, item)
         finally:
             session.close()
 
@@ -108,6 +190,73 @@ class CompanySettingsWidget(QWidget):
         finally:
             session.close()
         QMessageBox.information(self, "保存", "発行元情報を保存しました。")
+
+    def _save_seal_option(self):
+        session = get_session()
+        try:
+            cs = _get_or_create_settings(session)
+            cs.print_seal = self._print_seal_chk.isChecked()
+            session.commit()
+        finally:
+            session.close()
+
+    def _add_seal(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "印鑑画像を選択", "",
+            "画像ファイル (*.png *.jpg *.jpeg *.bmp *.gif)")
+        if not path:
+            return
+        label, ok = _ask_label(self, "印鑑ラベル", "印鑑のラベルを入力してください：",
+                                default="印鑑")
+        if not ok:
+            return
+        session = get_session()
+        try:
+            cs = _get_or_create_settings(session)
+            is_first = session.query(SealImage).filter_by(
+                company_id=cs.id).count() == 0
+            seal = SealImage(
+                company_id=cs.id,
+                label=label,
+                path=path,
+                is_default=is_first,
+            )
+            session.add(seal)
+            session.commit()
+        finally:
+            session.close()
+        self._load()
+
+    def _set_default_seal(self):
+        row = self._seal_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "未選択", "デフォルトにする印鑑を選択してください。")
+            return
+        seal_id = self._seal_table.item(row, 0).data(0x0100)
+        session = get_session()
+        try:
+            cs = _get_or_create_settings(session)
+            for s in cs.seal_images:
+                s.is_default = (s.id == seal_id)
+            session.commit()
+        finally:
+            session.close()
+        self._load()
+
+    def _del_seal(self):
+        row = self._seal_table.currentRow()
+        if row < 0:
+            return
+        seal_id = self._seal_table.item(row, 0).data(0x0100)
+        session = get_session()
+        try:
+            s = session.get(SealImage, seal_id)
+            if s:
+                session.delete(s)
+                session.commit()
+        finally:
+            session.close()
+        self._load()
 
     def _add_bank(self):
         dlg = BankAccountDialog(self)

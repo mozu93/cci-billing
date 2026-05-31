@@ -32,4 +32,6 @@ def get_db_url() -> str:
         user = config["user"]
         password = config["password"]
         return f"postgresql://{user}:{password}@{host}:{port}/{database}"
-    return "sqlite:///cci_billing.db"
+    db_path = CONFIG_DIR / "cci_billing.db"
+    CONFIG_DIR.mkdir(exist_ok=True)
+    return f"sqlite:///{db_path}"

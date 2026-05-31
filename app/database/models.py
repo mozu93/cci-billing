@@ -30,6 +30,7 @@ class CompanySettings(Base):
     email = Column(String(200), default="")
     invoice_reg_number = Column(String(20), default="")
     logo_path = Column(String(500), default="")
+    print_seal = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 

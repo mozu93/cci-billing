@@ -30,8 +30,6 @@ class ProjectFormDialog(QDialog):
         layout = QVBoxLayout(self)
         form = QFormLayout()
 
-        self._name = QLineEdit()
-        self._name.setPlaceholderText("例：2026年度 青年部会費")
         self._category = QComboBox()
         self._category.currentIndexChanged.connect(self._on_category_change)
         self._fiscal_year = QSpinBox()
@@ -42,8 +40,7 @@ class ProjectFormDialog(QDialog):
         self._notes = QTextEdit()
         self._notes.setFixedHeight(60)
 
-        form.addRow("事業名", self._name)
-        form.addRow("カテゴリ", self._category)
+        form.addRow("カテゴリ（事業名）", self._category)
         form.addRow("年度", self._fiscal_year)
         form.addRow("種別", self._project_type)
         form.addRow("備考", self._notes)
@@ -126,7 +123,6 @@ class ProjectFormDialog(QDialog):
             proj = get_project_by_id(session, project_id)
             if not proj:
                 return
-            self._name.setText(proj.name)
             self._fiscal_year.setValue(proj.fiscal_year)
             self._project_type.setCurrentIndex(0 if proj.project_type == "list" else 1)
             self._notes.setPlainText(proj.notes or "")
@@ -143,9 +139,10 @@ class ProjectFormDialog(QDialog):
             session.close()
 
     def _save(self):
-        name = self._name.text().strip()
-        if not name:
-            QMessageBox.warning(self, "入力エラー", "事業名を入力してください。")
+        cat_id = self._category.currentData()
+        name = self._category.currentText().strip()
+        if not name or cat_id is None:
+            QMessageBox.warning(self, "入力エラー", "カテゴリを選択してください。")
             return
         if self._selected_list.count() == 0:
             QMessageBox.warning(self, "入力エラー", "テンプレートを1つ以上選択してください。")
@@ -156,7 +153,7 @@ class ProjectFormDialog(QDialog):
             if self._project_id is None:
                 proj = create_project(
                     session, name=name,
-                    category_id=self._category.currentData(),
+                    category_id=cat_id,
                     fiscal_year=self._fiscal_year.value(),
                     project_type=ptype,
                     notes=self._notes.toPlainText().strip()
@@ -167,7 +164,7 @@ class ProjectFormDialog(QDialog):
             else:
                 proj = get_project_by_id(session, self._project_id)
                 proj.name = name
-                proj.category_id = self._category.currentData()
+                proj.category_id = cat_id
                 proj.fiscal_year = self._fiscal_year.value()
                 proj.project_type = ptype
                 proj.notes = self._notes.toPlainText().strip()
