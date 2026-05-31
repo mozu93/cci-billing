@@ -97,40 +97,6 @@ class ItemTemplate(Base):
     category = relationship("Category", back_populates="item_templates")
 
 
-class Member(Base):
-    __tablename__ = "members_master"
-    id = Column(Integer, primary_key=True)
-    member_number = Column(String(50), nullable=True, unique=True)
-    organization_name = Column(String(200), default="")
-    organization_kana = Column(String(200), default="")
-    representative_name = Column(String(100), default="")
-    representative_kana = Column(String(100), default="")
-    postal_code = Column(String(10), default="")
-    address = Column(String(300), default="")
-    phone = Column(String(50), default="")
-    email = Column(String(200), default="")
-    is_member = Column(Boolean, default=True)
-    is_active = Column(Boolean, default=True)
-    notes = Column(Text, default="")
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-
-    name_history = relationship("MemberNameHistory", back_populates="member",
-                                cascade="all, delete-orphan")
-
-
-class MemberNameHistory(Base):
-    __tablename__ = "member_name_history"
-    id = Column(Integer, primary_key=True)
-    member_id = Column(Integer, ForeignKey("members_master.id"), nullable=False)
-    organization_name = Column(String(200), default="")
-    representative_name = Column(String(100), default="")
-    changed_at = Column(DateTime, default=datetime.now)
-    reason = Column(String(200), default="")
-
-    member = relationship("Member", back_populates="name_history")
-
-
 class OperationLog(Base):
     __tablename__ = "operation_logs"
     id = Column(Integer, primary_key=True)

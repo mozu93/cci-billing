@@ -14,7 +14,6 @@ def test_create_all_tables():
     assert "staff" in tables
     assert "categories" in tables
     assert "item_templates" in tables
-    assert "members_master" in tables
     assert "company_settings" in tables
     assert "projects" in tables
     assert "issuances" in tables
