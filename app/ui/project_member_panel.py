@@ -2,15 +2,115 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QHeaderView, QMessageBox, QDialog,
-    QTextEdit, QFileDialog
+    QTextEdit, QFileDialog, QFormLayout, QLineEdit, QComboBox,
+    QDialogButtonBox
 )
 from PyQt6.QtCore import Qt
 from app.database.connection import get_session
 from app.services.project_service import (
-    get_project_members, add_members_to_project, remove_member_from_project
+    get_project_members, add_roster_entries, remove_member_from_project,
+    copy_roster_from_project, get_projects, get_project_by_id
 )
-from app.services.member_service import search_members
 from app.utils.excel_utils import parse_tsv_text, parse_excel_file
+
+
+class RosterEntryDialog(QDialog):
+    """事業名簿の1エントリ入力ダイアログ"""
+
+    FIELDS = [
+        ("organization_name",    "事業所名"),
+        ("organization_kana",    "フリガナ（事業所）"),
+        ("representative_name",  "代表者名"),
+        ("representative_kana",  "代表者フリガナ"),
+        ("postal_code",          "郵便番号"),
+        ("address",              "住所"),
+        ("phone",                "電話"),
+        ("email",                "メール"),
+    ]
+
+    def __init__(self, parent=None, initial: dict | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("名簿エントリ")
+        self.resize(420, 300)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self._fields: dict[str, QLineEdit] = {}
+        for key, label in self.FIELDS:
+            le = QLineEdit()
+            if initial and key in initial:
+                le.setText(initial[key] or "")
+            self._fields[key] = le
+            form.addRow(label + ":", le)
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save |
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        # ラベルを日本語化
+        save_btn = buttons.button(QDialogButtonBox.StandardButton.Save)
+        save_btn.setText("保存")
+        cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        cancel_btn.setText("キャンセル")
+        buttons.accepted.connect(self._on_save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _on_save(self):
+        org = self._fields["organization_name"].text().strip()
+        rep = self._fields["representative_name"].text().strip()
+        if not org and not rep:
+            QMessageBox.warning(
+                self, "入力エラー",
+                "事業所名または代表者名のいずれかを入力してください。"
+            )
+            return
+        self.accept()
+
+    def values(self) -> dict:
+        return {key: self._fields[key].text() for key, _ in self.FIELDS}
+
+
+class ProjectCopyDialog(QDialog):
+    """他の事業から名簿をコピーするダイアログ"""
+
+    def __init__(self, current_project_id: int, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("他の事業からコピー")
+        self.resize(360, 120)
+        self._selected_id: int | None = None
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("コピー元の事業を選択してください："))
+
+        self._combo = QComboBox()
+        session = get_session()
+        try:
+            projects = get_projects(session)
+        finally:
+            session.close()
+        for p in projects:
+            if p.id == current_project_id:
+                continue
+            label = f"{p.fiscal_year}年度 {p.name}"
+            self._combo.addItem(label, p.id)
+        layout.addWidget(self._combo)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        ok_btn.setText("コピー")
+        cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        cancel_btn.setText("キャンセル")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def selected_project_id(self) -> int | None:
+        return self._combo.currentData()
 
 
 class ProjectMemberPanel(QWidget):
@@ -22,26 +122,33 @@ class ProjectMemberPanel(QWidget):
 
     def _build(self):
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("会員リスト（リスト型事業）"))
+        layout.addWidget(QLabel("名簿（リスト型事業）"))
 
         btn_row = QHBoxLayout()
+        btn_add = QPushButton("行を追加")
+        btn_add.clicked.connect(self._add_entry)
+        btn_edit = QPushButton("編集")
+        btn_edit.clicked.connect(self._edit_entry)
+        btn_copy = QPushButton("他の事業からコピー")
+        btn_copy.clicked.connect(self._copy_from_project)
         btn_import = QPushButton("Excelインポート")
         btn_import.clicked.connect(self._import)
         btn_paste = QPushButton("貼り付けインポート")
         btn_paste.clicked.connect(self._paste_import)
         btn_del = QPushButton("削除")
         btn_del.clicked.connect(self._remove)
-        for b in [btn_import, btn_paste, btn_del]:
+        for b in [btn_add, btn_edit, btn_copy, btn_import, btn_paste, btn_del]:
             btn_row.addWidget(b)
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
         self._table = QTableWidget(0, 4)
         self._table.setHorizontalHeaderLabels(
-            ["会員番号", "事業所名", "代表者名", "ステータス"])
+            ["事業所名", "代表者名", "メール", "電話"])
         self._table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch)
+            0, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.doubleClicked.connect(self._edit_entry)
         layout.addWidget(self._table)
         self._count_label = QLabel("")
         layout.addWidget(self._count_label)
@@ -50,32 +157,77 @@ class ProjectMemberPanel(QWidget):
         session = get_session()
         try:
             pms = get_project_members(session, self._project_id)
-            from app.database.models import Issuance
-            pm_status = {}
-            for pm in pms:
-                iss = (session.query(Issuance)
-                       .filter_by(project_member_id=pm.id)
-                       .order_by(Issuance.created_at.desc())
-                       .first())
-                pm_status[pm.id] = iss.status if iss else "未準備"
         finally:
             session.close()
         self._table.setRowCount(0)
         for pm in pms:
-            m = pm.member
             row = self._table.rowCount()
             self._table.insertRow(row)
             vals = [
-                m.member_number or "" if m else "",
-                m.organization_name if m else "",
-                m.representative_name if m else "",
-                pm_status.get(pm.id, "未準備")
+                pm.organization_name or "",
+                pm.representative_name or "",
+                pm.email or "",
+                pm.phone or "",
             ]
             for col, val in enumerate(vals):
                 item = QTableWidgetItem(val)
                 item.setData(Qt.ItemDataRole.UserRole, pm.id)
                 self._table.setItem(row, col, item)
         self._count_label.setText(f"{len(pms)} 件")
+
+    def _add_entry(self):
+        dlg = RosterEntryDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            session = get_session()
+            try:
+                add_roster_entries(session, self._project_id, [dlg.values()])
+            finally:
+                session.close()
+            self._load()
+
+    def _edit_entry(self):
+        row = self._table.currentRow()
+        if row < 0:
+            return
+        pm_id = self._table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        session = get_session()
+        try:
+            from app.database.models import ProjectMember
+            pm = session.get(ProjectMember, pm_id)
+            if pm is None:
+                return
+            initial = {
+                "organization_name": pm.organization_name,
+                "organization_kana": pm.organization_kana,
+                "representative_name": pm.representative_name,
+                "representative_kana": pm.representative_kana,
+                "postal_code": pm.postal_code,
+                "address": pm.address,
+                "phone": pm.phone,
+                "email": pm.email,
+            }
+            dlg = RosterEntryDialog(self, initial=initial)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                vals = dlg.values()
+                for key, value in vals.items():
+                    setattr(pm, key, value)
+                session.commit()
+        finally:
+            session.close()
+        self._load()
+
+    def _copy_from_project(self):
+        dlg = ProjectCopyDialog(self._project_id, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            src_id = dlg.selected_project_id()
+            if src_id is None:
+                return
+            session = get_session()
+            try:
+                copy_roster_from_project(session, src_id, self._project_id)
+            finally:
+                session.close()
+            self._load()
 
     def _import(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -105,20 +257,11 @@ class ProjectMemberPanel(QWidget):
             self._register_rows(rows)
 
     def _register_rows(self, rows: list[dict]):
-        session = get_session()
-        added = 0
-        try:
-            for row in rows:
-                key = row.get("member_number", "") or row.get("organization_name", "")
-                if not key:
-                    continue
-                members = search_members(session, key)
-                if members:
-                    add_members_to_project(session, self._project_id, [members[0].id])
-                    added += 1
-        finally:
-            session.close()
-        QMessageBox.information(self, "完了", f"{added} 件を追加しました。")
+        valid = [r for r in rows
+                 if r.get("organization_name") or r.get("representative_name")]
+        if valid:
+            add_roster_entries(get_session(), self._project_id, valid)
+        QMessageBox.information(self, "完了", f"{len(valid)} 件を追加しました。")
         self._load()
 
     def _remove(self):
@@ -126,10 +269,10 @@ class ProjectMemberPanel(QWidget):
         if row < 0:
             return
         pm_id = self._table.item(row, 0).data(Qt.ItemDataRole.UserRole)
-        name = self._table.item(row, 1).text()
+        name = self._table.item(row, 0).text()
         if QMessageBox.question(
                 self, "削除の確認",
-                f"会員「{name}」をこの事業の名簿から削除します。\nよろしいですか？"
+                f"「{name}」をこの事業の名簿から削除します。\nよろしいですか？"
         ) != QMessageBox.StandardButton.Yes:
             return
         session = get_session()

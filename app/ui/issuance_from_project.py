@@ -38,7 +38,7 @@ class IssuanceFromProjectWidget(QWidget):
 
         search_row = QHBoxLayout()
         self._search = QLineEdit()
-        self._search.setPlaceholderText("名前・会員番号で絞り込み")
+        self._search.setPlaceholderText("事業所名・代表者名で絞り込み")
         self._timer = QTimer()
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._load_members)
@@ -47,11 +47,11 @@ class IssuanceFromProjectWidget(QWidget):
         search_row.addWidget(self._search)
         layout.addLayout(search_row)
 
-        self._table = QTableWidget(0, 5)
+        self._table = QTableWidget(0, 4)
         self._table.setHorizontalHeaderLabels(
-            ["会員番号", "事業所名", "代表者名", "ステータス", "発行番号"])
+            ["事業所名", "代表者名", "ステータス", "発行番号"])
         self._table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch)
+            0, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self._table)
 
@@ -108,9 +108,6 @@ class IssuanceFromProjectWidget(QWidget):
             from app.database.models import Issuance
             pm_data = []
             for pm in pms:
-                m = pm.member
-                if not m:
-                    continue
                 iss = (session.query(Issuance)
                        .filter_by(project_member_id=pm.id)
                        .order_by(Issuance.created_at.desc())
@@ -121,21 +118,25 @@ class IssuanceFromProjectWidget(QWidget):
                 if not show_all and status in ("発行済み", "支払済み"):
                     continue
                 if query:
-                    targets = [m.member_number or "", m.organization_name,
-                               m.representative_name, m.organization_kana]
+                    targets = [
+                        pm.organization_name or "",
+                        pm.representative_name or "",
+                        pm.organization_kana or "",
+                    ]
                     if not any(query in t.lower() for t in targets):
                         continue
-                pm_data.append((pm.id, m, status, doc_number, issuance_id))
+                pm_data.append((pm.id, pm, status, doc_number, issuance_id))
         finally:
             session.close()
 
         self._table.setRowCount(0)
-        for pm_id, m, status, doc_number, issuance_id in pm_data:
+        for pm_id, pm, status, doc_number, issuance_id in pm_data:
             row = self._table.rowCount()
             self._table.insertRow(row)
             for col, val in enumerate([
-                m.member_number or "", m.organization_name,
-                m.representative_name, status, doc_number
+                pm.organization_name or "",
+                pm.representative_name or "",
+                status, doc_number
             ]):
                 item = QTableWidgetItem(val)
                 item.setData(Qt.ItemDataRole.UserRole, (pm_id, issuance_id))
@@ -146,7 +147,10 @@ class IssuanceFromProjectWidget(QWidget):
         row = self._table.currentRow()
         if row < 0:
             return None
-        return self._table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        item = self._table.item(row, 0)
+        if item is None:
+            return None
+        return item.data(Qt.ItemDataRole.UserRole)
 
     def _get_doc_type(self, session, project_id: int) -> str:
         pts = get_project_templates(session, project_id)
@@ -168,14 +172,15 @@ class IssuanceFromProjectWidget(QWidget):
         try:
             from app.database.models import ProjectMember
             pm = session.get(ProjectMember, pm_id)
-            m = pm.member
             today = date.today()
             doc_type = self._get_doc_type(session, project_id)
             create_issuance_for_member(
                 session, project_id=project_id,
                 project_member_id=pm_id,
-                member=m, doc_type=doc_type,
-                fiscal_year=today.year, month=today.month
+                recipient_organization=pm.organization_name,
+                recipient_name=pm.representative_name,
+                doc_type=doc_type,
+                fiscal_year=today.year, month=today.month,
             )
         finally:
             session.close()
