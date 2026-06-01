@@ -4,7 +4,7 @@ from app.services.category_service import create_category
 from app.services.item_template_service import create_item_template
 from app.services.project_service import (
     create_project, add_template_to_project, add_roster_entries,
-    get_project_members, activate_project
+    get_project_members
 )
 from app.services.issuance_service import (
     create_issuance_for_member, mark_as_issued, record_payment
@@ -19,7 +19,6 @@ def _setup(db_session):
     tmpl = create_item_template(db_session, cat.id, "青年部会費",
                                 10000, "式", 0, "invoice", "")
     proj = create_project(db_session, "2026年度 青年部会費", cat.id, 2026, "list")
-    activate_project(db_session, proj.id)
     add_template_to_project(db_session, proj.id, tmpl.id)
     add_roster_entries(db_session, proj.id, [
         {"organization_name": "○○商事", "representative_name": "田中"},

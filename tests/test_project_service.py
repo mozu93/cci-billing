@@ -2,7 +2,7 @@
 from app.services.category_service import create_category
 from app.services.item_template_service import create_item_template
 from app.services.project_service import (
-    create_project, get_projects, activate_project, close_project,
+    create_project, get_projects, close_project,
     add_template_to_project, add_roster_entries,
     get_project_members, get_project_progress, remove_member_from_project,
     copy_roster_from_project, get_project_by_id,
@@ -33,14 +33,6 @@ def test_reopen_project(db_session):
     assert get_project_by_id(db_session, p.id).status == "closed"
     reopen_project(db_session, p.id)
     assert get_project_by_id(db_session, p.id).status == "active"
-
-
-def test_activate_project(db_session):
-    cat = create_category(db_session, "青年部")
-    proj = create_project(db_session, "2026年度 青年部会費", cat.id, 2026, "list")
-    activate_project(db_session, proj.id)
-    db_session.refresh(proj)
-    assert proj.status == "active"
 
 
 def test_get_projects_by_year(db_session):

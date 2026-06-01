@@ -31,13 +31,6 @@ def get_project_by_id(session: Session, project_id: int) -> Project | None:
     return session.get(Project, project_id)
 
 
-def activate_project(session: Session, project_id: int) -> None:
-    proj = session.get(Project, project_id)
-    if proj:
-        proj.status = "active"
-        session.commit()
-
-
 def reopen_project(session: Session, project_id: int) -> None:
     proj = session.get(Project, project_id)
     if proj:
@@ -49,13 +42,6 @@ def close_project(session: Session, project_id: int) -> None:
     proj = session.get(Project, project_id)
     if proj:
         proj.status = "closed"
-        session.commit()
-
-
-def archive_project(session: Session, project_id: int) -> None:
-    proj = session.get(Project, project_id)
-    if proj:
-        proj.status = "archived"
         session.commit()
 
 
