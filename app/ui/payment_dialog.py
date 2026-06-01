@@ -30,7 +30,7 @@ class PaymentManagementWidget(QWidget):
         self._status_combo = QComboBox()
         self._status_combo.addItems(["発行済み", "支払済み", "すべて"])
         self._status_combo.currentIndexChanged.connect(self._load)
-        top.addWidget(QLabel("事業："))
+        top.addWidget(QLabel("名簿："))
         top.addWidget(self._proj_combo)
         top.addWidget(QLabel("状態："))
         top.addWidget(self._status_combo)

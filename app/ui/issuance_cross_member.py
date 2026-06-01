@@ -25,7 +25,7 @@ class IssuanceCrossMemberWidget(QWidget):
     def _build(self):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(
-            "名簿を検索して選択すると、その事業の未発行が表示されます。\n"
+            "名簿を検索して選択すると、その名簿の未発行が表示されます。\n"
             "チェックした項目をまとめて発行できます（同種別のみ合算可）。"
         ))
 
@@ -41,7 +41,7 @@ class IssuanceCrossMemberWidget(QWidget):
         layout.addLayout(search_row)
 
         self._member_table = QTableWidget(0, 3)
-        self._member_table.setHorizontalHeaderLabels(["事業名", "事業所名", "代表者名"])
+        self._member_table.setHorizontalHeaderLabels(["名簿名", "事業所名", "代表者名"])
         self._member_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch)
         self._member_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -52,7 +52,7 @@ class IssuanceCrossMemberWidget(QWidget):
         layout.addWidget(QLabel("未発行一覧："))
         self._pending_table = QTableWidget(0, 4)
         self._pending_table.setHorizontalHeaderLabels(
-            ["選択", "事業名", "書類種別", "金額"])
+            ["選択", "名簿名", "書類種別", "金額"])
         self._pending_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch)
         self._pending_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)

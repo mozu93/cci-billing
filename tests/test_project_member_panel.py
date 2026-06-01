@@ -34,4 +34,4 @@ def test_panel_has_add_and_copy_buttons(qtbot, memory_db):
     qtbot.addWidget(panel)
     texts = _button_texts(panel)
     assert "行を追加" in texts
-    assert "他の事業からコピー" in texts
+    assert "他の名簿からコピー" in texts

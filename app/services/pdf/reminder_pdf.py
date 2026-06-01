@@ -67,7 +67,7 @@ def generate_reminder_pdf(issuance, company, output_path: str,
 
     info_data = [
         ["書類番号", issuance.doc_number],
-        ["事業名", proj_name],
+        ["件名", proj_name],
         ["金額", f"¥{int(issuance.amount):,}（税込）"],
     ]
     info_table = Table(info_data, colWidths=[40*mm, 100*mm])

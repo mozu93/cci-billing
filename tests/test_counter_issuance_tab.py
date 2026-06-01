@@ -12,4 +12,4 @@ def test_counter_issuance_subtabs(qtbot, memory_db):
     qtbot.addWidget(w)
     inner = w.findChild(QTabWidget)
     assert inner is not None
-    assert _tab_titles(inner) == ["フリー発行", "随時受取"]
+    assert _tab_titles(inner) == ["フリー発行", "登録済発行"]

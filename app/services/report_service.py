@@ -77,7 +77,7 @@ def get_project_summary(session: Session,
         rows.append({
             "fiscal_year":  proj.fiscal_year,
             "project_name": proj.name,
-            "project_type": "リスト型" if proj.project_type == "list" else "窓口型",
+            "project_type": "名簿あり" if proj.project_type == "list" else "その場入力",
             "total":        p["total"],
             "issued":       p["issued"],
             "paid":         p["paid"],

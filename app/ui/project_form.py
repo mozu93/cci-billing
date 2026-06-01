@@ -20,7 +20,7 @@ class ProjectFormDialog(QDialog):
     def __init__(self, project_id: int | None = None, parent=None):
         super().__init__(parent)
         self._project_id = project_id
-        self.setWindowTitle("事業登録" if project_id is None else "事業編集")
+        self.setWindowTitle("名簿登録" if project_id is None else "名簿編集")
         self.resize(560, 580)
         self._build()
         if project_id:
@@ -36,11 +36,11 @@ class ProjectFormDialog(QDialog):
         self._fiscal_year.setRange(2000, 2099)
         self._fiscal_year.setValue(date.today().year)
         self._project_type = QComboBox()
-        self._project_type.addItems(["リスト型（会員名簿あり）", "窓口型（その場入力）"])
+        self._project_type.addItems(["名簿あり", "その場入力"])
         self._notes = QTextEdit()
         self._notes.setFixedHeight(60)
 
-        form.addRow("業務名（事業名）", self._category)
+        form.addRow("業務名", self._category)
         form.addRow("年度", self._fiscal_year)
         form.addRow("種別", self._project_type)
         form.addRow("備考", self._notes)
@@ -61,7 +61,7 @@ class ProjectFormDialog(QDialog):
         left.addWidget(btn_new_tmpl)
 
         right = QVBoxLayout()
-        right.addWidget(QLabel("この事業で使用するテンプレート："))
+        right.addWidget(QLabel("この名簿で使用するテンプレート："))
         self._selected_list = QListWidget()
         right.addWidget(self._selected_list)
         btn_del_tmpl = QPushButton("← 削除")

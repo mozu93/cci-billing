@@ -6,7 +6,7 @@ from app.ui.payment_dialog import PaymentManagementWidget
 
 
 class BatchIssuanceTab(QWidget):
-    """まとめて発行：事業単位の準備・一括発行・入金管理をまとめるタブ。"""
+    """まとめて発行：名簿単位の準備・一括発行・入金管理をまとめるタブ。"""
 
     def __init__(self):
         super().__init__()

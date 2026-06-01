@@ -20,7 +20,7 @@ class ReportTab(QWidget):
         inner = QTabWidget()
         inner.addTab(UnpaidReportWidget(), "未払い一覧")
         inner.addTab(PaymentReportWidget(), "入金一覧")
-        inner.addTab(ProjectSummaryWidget(), "事業別集計")
+        inner.addTab(ProjectSummaryWidget(), "名簿別集計")
         layout.addWidget(inner)
 
 
@@ -111,7 +111,7 @@ class _BaseReportWidget(QWidget):
 
 
 class UnpaidReportWidget(_BaseReportWidget):
-    HEADERS = ["発行番号", "事業名", "年度", "事業所名", "代表者名", "会員番号", "金額", "状態"]
+    HEADERS = ["発行番号", "名簿名", "年度", "事業所名", "代表者名", "会員番号", "金額", "状態"]
     KEYS = ["doc_number", "project_name", "fiscal_year", "organization_name",
             "representative_name", "member_number", "amount", "status"]
 
@@ -121,7 +121,7 @@ class UnpaidReportWidget(_BaseReportWidget):
 
 
 class PaymentReportWidget(_BaseReportWidget):
-    HEADERS = ["入金日", "発行番号", "事業名", "年度", "宛先", "入金額", "入金方法", "担当者"]
+    HEADERS = ["入金日", "発行番号", "名簿名", "年度", "宛先", "入金額", "入金方法", "担当者"]
     KEYS = ["payment_date", "doc_number", "project_name", "fiscal_year",
             "organization", "amount", "payment_method", "staff_name"]
 
@@ -131,7 +131,7 @@ class PaymentReportWidget(_BaseReportWidget):
 
 
 class ProjectSummaryWidget(_BaseReportWidget):
-    HEADERS = ["年度", "事業名", "種別", "全件", "発行済", "支払済", "未発行", "総額", "入金額"]
+    HEADERS = ["年度", "名簿名", "種別", "全件", "発行済", "支払済", "未発行", "総額", "入金額"]
     KEYS = ["fiscal_year", "project_name", "project_type", "total", "issued",
             "paid", "pending", "total_amount", "paid_amount"]
 

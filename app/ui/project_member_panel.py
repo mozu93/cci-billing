@@ -14,7 +14,7 @@ from app.services.project_service import (
 
 
 class RosterEntryDialog(QDialog):
-    """事業名簿の1エントリ入力ダイアログ"""
+    """名簿の1エントリ入力ダイアログ"""
 
     FIELDS = [
         ("organization_name",    "事業所名"),
@@ -72,16 +72,16 @@ class RosterEntryDialog(QDialog):
 
 
 class ProjectCopyDialog(QDialog):
-    """他の事業から名簿をコピーするダイアログ"""
+    """他の名簿からコピーするダイアログ"""
 
     def __init__(self, current_project_id: int, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("他の事業からコピー")
+        self.setWindowTitle("他の名簿からコピー")
         self.resize(360, 120)
         self._selected_id: int | None = None
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("コピー元の事業を選択してください："))
+        layout.addWidget(QLabel("コピー元の名簿を選択してください："))
 
         self._combo = QComboBox()
         session = get_session()
@@ -121,14 +121,14 @@ class ProjectMemberPanel(QWidget):
 
     def _build(self):
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("名簿（リスト型事業）"))
+        layout.addWidget(QLabel("名簿"))
 
         btn_row = QHBoxLayout()
         btn_add = QPushButton("行を追加")
         btn_add.clicked.connect(self._add_entry)
         btn_edit = QPushButton("編集")
         btn_edit.clicked.connect(self._edit_entry)
-        btn_copy = QPushButton("他の事業からコピー")
+        btn_copy = QPushButton("他の名簿からコピー")
         btn_copy.clicked.connect(self._copy_from_project)
         btn_import = QPushButton("取り込み（Excel/貼り付け）")
         btn_import.clicked.connect(self._open_import)
@@ -240,7 +240,7 @@ class ProjectMemberPanel(QWidget):
         name = self._table.item(row, 0).text()
         if QMessageBox.question(
                 self, "削除の確認",
-                f"「{name}」をこの事業の名簿から削除します。\nよろしいですか？"
+                f"「{name}」をこの名簿から削除します。\nよろしいですか？"
         ) != QMessageBox.StandardButton.Yes:
             return
         session = get_session()

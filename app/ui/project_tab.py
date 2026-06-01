@@ -33,7 +33,7 @@ class ProjectTab(QWidget):
         self._year_combo.currentIndexChanged.connect(self._load)
         top_row.addWidget(self._year_combo)
 
-        btn_add = QPushButton("＋ 新規事業")
+        btn_add = QPushButton("＋ 新規名簿登録")
         btn_add.clicked.connect(self._add)
         btn_edit = QPushButton("編集")
         btn_edit.clicked.connect(self._edit)
@@ -55,7 +55,7 @@ class ProjectTab(QWidget):
 
         self._table = QTableWidget(0, 6)
         self._table.setHorizontalHeaderLabels(
-            ["事業名", "種別", "状態", "全件", "発行済", "未発行"])
+            ["名簿名", "種別", "状態", "全件", "発行済", "未発行"])
         self._table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -90,7 +90,7 @@ class ProjectTab(QWidget):
                 p = get_project_progress(session, proj.id)
                 row = self._table.rowCount()
                 self._table.insertRow(row)
-                type_label = "リスト型" if proj.project_type == "list" else "窓口型"
+                type_label = "名簿あり" if proj.project_type == "list" else "その場入力"
                 for col, val in enumerate([
                     proj.name, type_label, proj.status,
                     str(p["total"]), str(p["issued"]), str(p["pending"])

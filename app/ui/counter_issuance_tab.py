@@ -12,5 +12,5 @@ class CounterIssuanceTab(QWidget):
         layout = QVBoxLayout(self)
         inner = QTabWidget()
         inner.addTab(IssuanceCounterWidget(), "フリー発行")
-        inner.addTab(IssuanceCrossMemberWidget(), "随時受取")
+        inner.addTab(IssuanceCrossMemberWidget(), "登録済発行")
         layout.addWidget(inner)

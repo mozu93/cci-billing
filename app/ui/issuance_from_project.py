@@ -23,7 +23,7 @@ class IssuanceFromProjectWidget(QWidget):
         layout = QVBoxLayout(self)
 
         top = QHBoxLayout()
-        top.addWidget(QLabel("事業："))
+        top.addWidget(QLabel("名簿："))
         self._proj_combo = QComboBox()
         self._proj_combo.setMinimumWidth(300)
         self._proj_combo.currentIndexChanged.connect(self._on_project_changed)
@@ -101,7 +101,7 @@ class IssuanceFromProjectWidget(QWidget):
         self._on_project_changed()
 
     def _on_project_changed(self):
-        """事業選択時にdoctype_comboの既定値を推定してからメンバーを読み込む。"""
+        """名簿選択時にdoctype_comboの既定値を推定してからメンバーを読み込む。"""
         project_id = self._proj_combo.currentData()
         if project_id is not None:
             session = get_session()

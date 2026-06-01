@@ -37,10 +37,10 @@ class DashboardWidget(QWidget):
         top_row.addStretch()
         layout.addLayout(top_row)
 
-        layout.addWidget(QLabel("■ 受付中の事業"))
+        layout.addWidget(QLabel("■ 受付中の名簿"))
         self._table = QTableWidget(0, 6)
         self._table.setHorizontalHeaderLabels(
-            ["事業名", "種別", "全件", "発行済", "支払済", "未発行"])
+            ["名簿名", "種別", "全件", "発行済", "支払済", "未発行"])
         self._table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -58,7 +58,7 @@ class DashboardWidget(QWidget):
                 p = get_project_progress(session, proj.id)
                 row = self._table.rowCount()
                 self._table.insertRow(row)
-                type_label = "リスト型" if proj.project_type == "list" else "窓口型"
+                type_label = "名簿あり" if proj.project_type == "list" else "その場入力"
                 pending = p["pending"]
                 for col, val in enumerate([
                     proj.name, type_label,

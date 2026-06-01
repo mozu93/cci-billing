@@ -36,9 +36,9 @@ class FiscalYearDialog(QDialog):
         top.addWidget(self._to_year)
         top.addStretch()
         layout.addLayout(top)
-        layout.addWidget(QLabel("引き継ぐ事業にチェック、会員引き継ぎを選択してください。"))
+        layout.addWidget(QLabel("引き継ぐ名簿にチェック、会員引き継ぎを選択してください。"))
         self._table = QTableWidget(0, 4)
-        self._table.setHorizontalHeaderLabels(["選択", "事業名", "種別", "会員引き継ぎ"])
+        self._table.setHorizontalHeaderLabels(["選択", "名簿名", "種別", "会員引き継ぎ"])
         layout.addWidget(self._table)
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -65,7 +65,7 @@ class FiscalYearDialog(QDialog):
             cb_select.setChecked(True)
             self._table.setCellWidget(row, 0, cb_select)
             self._table.setItem(row, 1, QTableWidgetItem(proj.name))
-            type_label = "リスト型" if proj.project_type == "list" else "窓口型"
+            type_label = "名簿あり" if proj.project_type == "list" else "その場入力"
             self._table.setItem(row, 2, QTableWidgetItem(type_label))
             cb_keep = QCheckBox()
             cb_keep.setChecked(proj.project_type == "list")
@@ -89,7 +89,7 @@ class FiscalYearDialog(QDialog):
             project_ids.append(proj_id)
             keep_members[proj_id] = cb_keep.isChecked() if cb_keep else False
         if not project_ids:
-            QMessageBox.warning(self, "エラー", "引き継ぐ事業を選択してください。")
+            QMessageBox.warning(self, "エラー", "引き継ぐ名簿を選択してください。")
             return
         session = get_session()
         try:
@@ -98,7 +98,7 @@ class FiscalYearDialog(QDialog):
                 project_ids=project_ids, keep_members=keep_members
             )
             QMessageBox.information(self, "完了",
-                                    f"{len(new_projects)} 件の事業を{to_year}年度にコピーしました。")
+                                    f"{len(new_projects)} 件の名簿を{to_year}年度にコピーしました。")
         except Exception as e:
             QMessageBox.critical(self, "エラー", str(e))
         finally:
