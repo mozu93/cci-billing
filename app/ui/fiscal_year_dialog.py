@@ -37,8 +37,8 @@ class FiscalYearDialog(QDialog):
         top.addStretch()
         layout.addLayout(top)
         layout.addWidget(QLabel("引き継ぐ名簿にチェック、会員引き継ぎを選択してください。"))
-        self._table = QTableWidget(0, 4)
-        self._table.setHorizontalHeaderLabels(["選択", "名簿名", "種別", "会員引き継ぎ"])
+        self._table = QTableWidget(0, 3)
+        self._table.setHorizontalHeaderLabels(["選択", "名簿名", "会員引き継ぎ"])
         layout.addWidget(self._table)
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -65,11 +65,9 @@ class FiscalYearDialog(QDialog):
             cb_select.setChecked(True)
             self._table.setCellWidget(row, 0, cb_select)
             self._table.setItem(row, 1, QTableWidgetItem(proj.name))
-            type_label = "名簿あり" if proj.project_type == "list" else "その場入力"
-            self._table.setItem(row, 2, QTableWidgetItem(type_label))
             cb_keep = QCheckBox()
             cb_keep.setChecked(proj.project_type == "list")
-            self._table.setCellWidget(row, 3, cb_keep)
+            self._table.setCellWidget(row, 2, cb_keep)
             self._table.item(row, 1).setData(Qt.ItemDataRole.UserRole, proj.id)
 
     def _execute(self):
@@ -85,7 +83,7 @@ class FiscalYearDialog(QDialog):
             if not (cb_select and cb_select.isChecked()):
                 continue
             proj_id = self._table.item(row, 1).data(Qt.ItemDataRole.UserRole)
-            cb_keep = self._table.cellWidget(row, 3)
+            cb_keep = self._table.cellWidget(row, 2)
             project_ids.append(proj_id)
             keep_members[proj_id] = cb_keep.isChecked() if cb_keep else False
         if not project_ids:

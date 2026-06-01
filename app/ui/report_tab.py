@@ -131,8 +131,8 @@ class PaymentReportWidget(_BaseReportWidget):
 
 
 class ProjectSummaryWidget(_BaseReportWidget):
-    HEADERS = ["年度", "名簿名", "種別", "全件", "発行済", "支払済", "未発行", "総額", "入金額"]
-    KEYS = ["fiscal_year", "project_name", "project_type", "total", "issued",
+    HEADERS = ["年度", "名簿名", "全件", "発行済", "支払済", "未発行", "総額", "入金額"]
+    KEYS = ["fiscal_year", "project_name", "total", "issued",
             "paid", "pending", "total_amount", "paid_amount"]
 
     def _get_rows(self, session, fiscal_year):

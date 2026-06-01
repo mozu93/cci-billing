@@ -53,9 +53,9 @@ class ProjectTab(QWidget):
 
         splitter = QSplitter(Qt.Orientation.Vertical)
 
-        self._table = QTableWidget(0, 6)
+        self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(
-            ["名簿名", "種別", "状態", "全件", "発行済", "未発行"])
+            ["名簿名", "状態", "全件", "発行済", "未発行"])
         self._table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -90,9 +90,8 @@ class ProjectTab(QWidget):
                 p = get_project_progress(session, proj.id)
                 row = self._table.rowCount()
                 self._table.insertRow(row)
-                type_label = "名簿あり" if proj.project_type == "list" else "その場入力"
                 for col, val in enumerate([
-                    proj.name, type_label, proj.status,
+                    proj.name, proj.status,
                     str(p["total"]), str(p["issued"]), str(p["pending"])
                 ]):
                     item = QTableWidgetItem(val)

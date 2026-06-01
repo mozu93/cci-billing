@@ -38,9 +38,9 @@ class DashboardWidget(QWidget):
         layout.addLayout(top_row)
 
         layout.addWidget(QLabel("■ 受付中の名簿"))
-        self._table = QTableWidget(0, 6)
+        self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(
-            ["名簿名", "種別", "全件", "発行済", "支払済", "未発行"])
+            ["名簿名", "全件", "発行済", "支払済", "未発行"])
         self._table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -58,16 +58,15 @@ class DashboardWidget(QWidget):
                 p = get_project_progress(session, proj.id)
                 row = self._table.rowCount()
                 self._table.insertRow(row)
-                type_label = "名簿あり" if proj.project_type == "list" else "その場入力"
                 pending = p["pending"]
                 for col, val in enumerate([
-                    proj.name, type_label,
+                    proj.name,
                     str(p["total"]), str(p["issued"]),
                     str(p["paid"]), str(pending)
                 ]):
                     item = QTableWidgetItem(val)
                     item.setData(Qt.ItemDataRole.UserRole, proj.id)
-                    if col == 5 and pending > 0:
+                    if col == 4 and pending > 0:
                         item.setForeground(QColor("#DC2626"))
                     self._table.setItem(row, col, item)
         finally:

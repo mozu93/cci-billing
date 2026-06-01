@@ -35,14 +35,11 @@ class ProjectFormDialog(QDialog):
         self._fiscal_year = QSpinBox()
         self._fiscal_year.setRange(2000, 2099)
         self._fiscal_year.setValue(date.today().year)
-        self._project_type = QComboBox()
-        self._project_type.addItems(["名簿あり", "その場入力"])
         self._notes = QTextEdit()
         self._notes.setFixedHeight(60)
 
         form.addRow("業務名", self._category)
         form.addRow("年度", self._fiscal_year)
-        form.addRow("種別", self._project_type)
         form.addRow("備考", self._notes)
         layout.addLayout(form)
 
@@ -134,7 +131,6 @@ class ProjectFormDialog(QDialog):
             if not proj:
                 return
             self._fiscal_year.setValue(proj.fiscal_year)
-            self._project_type.setCurrentIndex(0 if proj.project_type == "list" else 1)
             self._notes.setPlainText(proj.notes or "")
             for i in range(self._category.count()):
                 if self._category.itemData(i) == proj.category_id:
@@ -159,13 +155,12 @@ class ProjectFormDialog(QDialog):
             return
         session = get_session()
         try:
-            ptype = "list" if self._project_type.currentIndex() == 0 else "counter"
             if self._project_id is None:
                 proj = create_project(
                     session, name=name,
                     category_id=cat_id,
                     fiscal_year=self._fiscal_year.value(),
-                    project_type=ptype,
+                    project_type="list",
                     notes=self._notes.toPlainText().strip()
                 )
                 for i in range(self._selected_list.count()):
@@ -176,7 +171,6 @@ class ProjectFormDialog(QDialog):
                 proj.name = name
                 proj.category_id = cat_id
                 proj.fiscal_year = self._fiscal_year.value()
-                proj.project_type = ptype
                 proj.notes = self._notes.toPlainText().strip()
                 from app.database.models import ProjectTemplate
                 session.query(ProjectTemplate).filter_by(project_id=proj.id).delete()
