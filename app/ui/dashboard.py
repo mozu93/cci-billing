@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from app.database.connection import get_session
-from app.services.project_service import get_projects, get_project_progress, activate_project
+from app.services.project_service import get_projects, get_project_progress
 
 
 class DashboardWidget(QWidget):
@@ -46,20 +46,12 @@ class DashboardWidget(QWidget):
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self._table)
 
-        layout.addWidget(QLabel("■ 準備中の事業（draft）"))
-        self._draft_table = QTableWidget(0, 3)
-        self._draft_table.setHorizontalHeaderLabels(["事業名", "種別", "操作"])
-        self._draft_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch)
-        self._draft_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(self._draft_table)
 
     def _load(self):
         year = self._year_combo.currentData()
         session = get_session()
         try:
             active = get_projects(session, fiscal_year=year, status="active")
-            draft = get_projects(session, fiscal_year=year, status="draft")
 
             self._table.setRowCount(0)
             for proj in active:
@@ -78,30 +70,8 @@ class DashboardWidget(QWidget):
                     if col == 5 and pending > 0:
                         item.setForeground(QColor("#DC2626"))
                     self._table.setItem(row, col, item)
-
-            self._draft_table.setRowCount(0)
-            for proj in draft:
-                row = self._draft_table.rowCount()
-                self._draft_table.insertRow(row)
-                type_label = "リスト型" if proj.project_type == "list" else "窓口型"
-                self._draft_table.setItem(row, 0, QTableWidgetItem(proj.name))
-                self._draft_table.setItem(row, 1, QTableWidgetItem(type_label))
-                btn = QPushButton("受付開始")
-                btn.setProperty("project_id", proj.id)
-                btn.clicked.connect(self._activate)
-                self._draft_table.setCellWidget(row, 2, btn)
         finally:
             session.close()
-
-    def _activate(self):
-        btn = self.sender()
-        project_id = btn.property("project_id")
-        session = get_session()
-        try:
-            activate_project(session, project_id)
-        finally:
-            session.close()
-        self._load()
 
     def _rollover(self):
         from app.ui.fiscal_year_dialog import FiscalYearDialog

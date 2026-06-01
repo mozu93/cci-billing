@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from app.database.connection import get_session
 from app.services.project_service import (
-    get_projects, activate_project, close_project, archive_project,
+    get_projects, close_project, reopen_project,
     get_project_progress, get_project_by_id
 )
 from app.ui.project_form import ProjectFormDialog
@@ -42,7 +42,10 @@ class ProjectTab(QWidget):
         top_row.addStretch()
 
         self._status_combo = QComboBox()
-        self._status_combo.addItems(["すべて", "draft", "active", "closed", "archived"])
+        self._status_combo.addItem("受付中", "active")
+        self._status_combo.addItem("完了", "closed")
+        self._status_combo.addItem("すべて", None)
+        self._status_combo.setCurrentIndex(0)
         self._status_combo.currentIndexChanged.connect(self._load)
         top_row.addWidget(QLabel("状態："))
         top_row.addWidget(self._status_combo)
@@ -67,23 +70,18 @@ class ProjectTab(QWidget):
         layout.addWidget(splitter)
 
         btn_row2 = QHBoxLayout()
-        btn_activate = QPushButton("受付開始（active）")
-        btn_activate.clicked.connect(self._activate)
-        btn_close = QPushButton("終了（closed）")
+        btn_close = QPushButton("完了")
         btn_close.clicked.connect(self._close)
-        btn_archive = QPushButton("アーカイブ")
-        btn_archive.clicked.connect(self._archive)
-        btn_batch_pdf = QPushButton("一括PDF生成")
-        btn_batch_pdf.clicked.connect(self._batch_pdf)
-        for b in [btn_activate, btn_close, btn_archive, btn_batch_pdf]:
+        btn_reopen = QPushButton("完了を戻す")
+        btn_reopen.clicked.connect(self._reopen)
+        for b in [btn_close, btn_reopen]:
             btn_row2.addWidget(b)
         btn_row2.addStretch()
         layout.addLayout(btn_row2)
 
     def _load(self):
         year = self._year_combo.currentData()
-        status_text = self._status_combo.currentText()
-        status = None if status_text == "すべて" else status_text
+        status = self._status_combo.currentData()
         session = get_session()
         try:
             projects = get_projects(session, fiscal_year=year, status=status)
@@ -140,17 +138,6 @@ class ProjectTab(QWidget):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._load()
 
-    def _activate(self):
-        pid = self._selected_project_id()
-        if pid is None:
-            return
-        session = get_session()
-        try:
-            activate_project(session, pid)
-        finally:
-            session.close()
-        self._load()
-
     def _close(self):
         pid = self._selected_project_id()
         if pid is None:
@@ -162,36 +149,13 @@ class ProjectTab(QWidget):
             session.close()
         self._load()
 
-    def _archive(self):
+    def _reopen(self):
         pid = self._selected_project_id()
         if pid is None:
             return
         session = get_session()
         try:
-            archive_project(session, pid)
+            reopen_project(session, pid)
         finally:
             session.close()
         self._load()
-
-    def _batch_pdf(self):
-        pid = self._selected_project_id()
-        if pid is None:
-            return
-        from PyQt6.QtWidgets import QMessageBox
-        session = get_session()
-        try:
-            from app.utils.pdf_helpers import get_company_and_bank, get_pdf_output_dir
-            from app.services.pdf.batch_pdf import generate_batch_pdf
-            company, bank = get_company_and_bank(session)
-            if not company or not company.name:
-                QMessageBox.warning(self, "エラー",
-                                    "設定→発行元情報に名称を登録してください。")
-                return
-            output_dir = get_pdf_output_dir()
-            paths = generate_batch_pdf(session, pid, company, output_dir, bank)
-            QMessageBox.information(self, "完了",
-                                    f"{len(paths)} 件のPDFを生成しました。\n保存先：{output_dir}")
-        except Exception as e:
-            QMessageBox.critical(self, "エラー", str(e))
-        finally:
-            session.close()
