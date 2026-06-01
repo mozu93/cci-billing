@@ -26,13 +26,18 @@ class IssuanceFromProjectWidget(QWidget):
         top.addWidget(QLabel("事業："))
         self._proj_combo = QComboBox()
         self._proj_combo.setMinimumWidth(300)
-        self._proj_combo.currentIndexChanged.connect(self._load_members)
+        self._proj_combo.currentIndexChanged.connect(self._on_project_changed)
         top.addWidget(self._proj_combo)
+        top.addWidget(QLabel("表示："))
         self._filter_combo = QComboBox()
         self._filter_combo.addItems(["未発行のみ", "すべて"])
         self._filter_combo.currentIndexChanged.connect(self._load_members)
-        top.addWidget(QLabel("表示："))
         top.addWidget(self._filter_combo)
+        top.addWidget(QLabel("書類種別："))
+        self._doctype_combo = QComboBox()
+        self._doctype_combo.addItem("請求書", "invoice")
+        self._doctype_combo.addItem("領収書", "receipt")
+        top.addWidget(self._doctype_combo)
         top.addStretch()
         layout.addLayout(top)
 
@@ -56,14 +61,14 @@ class IssuanceFromProjectWidget(QWidget):
         layout.addWidget(self._table)
 
         btn_row = QHBoxLayout()
-        btn_prepare = QPushButton("準備（採番）")
-        btn_prepare.clicked.connect(self._prepare)
-        btn_issue = QPushButton("発行する")
-        btn_issue.clicked.connect(self._issue)
+        btn_issue = QPushButton("発行")
+        btn_issue.clicked.connect(self._issue_one)
+        btn_issue_all = QPushButton("全員まとめて発行")
+        btn_issue_all.clicked.connect(self._issue_all)
         self._delivery_combo = QComboBox()
         self._delivery_combo.addItems(["窓口手渡し", "郵送", "メール送付", "その他"])
-        btn_row.addWidget(btn_prepare)
         btn_row.addWidget(btn_issue)
+        btn_row.addWidget(btn_issue_all)
         btn_row.addWidget(QLabel("配付方法："))
         btn_row.addWidget(self._delivery_combo)
         btn_row.addStretch()
@@ -93,6 +98,22 @@ class IssuanceFromProjectWidget(QWidget):
                     self._proj_combo.setCurrentIndex(i)
                     break
         self._proj_combo.blockSignals(False)
+        self._on_project_changed()
+
+    def _on_project_changed(self):
+        """事業選択時にdoctype_comboの既定値を推定してからメンバーを読み込む。"""
+        project_id = self._proj_combo.currentData()
+        if project_id is not None:
+            session = get_session()
+            try:
+                doc_type = self._get_doc_type(session, project_id)
+            finally:
+                session.close()
+            # doctype_comboをセット
+            for i in range(self._doctype_combo.count()):
+                if self._doctype_combo.itemData(i) == doc_type:
+                    self._doctype_combo.setCurrentIndex(i)
+                    break
         self._load_members()
 
     def _load_members(self):
@@ -159,60 +180,89 @@ class IssuanceFromProjectWidget(QWidget):
                 return "receipt"
         return "invoice"
 
-    def _prepare(self):
+    def _issue_one(self):
+        """発行1ボタン：採番→発行→PDF生成を一括で行う。"""
         sel = self._selected_pm()
         if sel is None:
             return
         pm_id, issuance_id = sel
-        if issuance_id is not None:
-            QMessageBox.information(self, "情報", "既に採番済みです。")
-            return
         project_id = self._proj_combo.currentData()
+        doc_type = self._doctype_combo.currentData()
+        delivery = self._delivery_combo.currentText()
         session = get_session()
         try:
-            from app.database.models import ProjectMember
+            from app.database.models import ProjectMember, Issuance
+            from app.utils.pdf_helpers import generate_and_open
             pm = session.get(ProjectMember, pm_id)
-            today = date.today()
-            doc_type = self._get_doc_type(session, project_id)
-            create_issuance_for_member(
-                session, project_id=project_id,
-                project_member_id=pm_id,
-                recipient_organization=pm.organization_name,
-                recipient_name=pm.representative_name,
-                doc_type=doc_type,
-                fiscal_year=today.year, month=today.month,
-            )
+
+            # 未採番なら採番
+            if issuance_id is None:
+                today = date.today()
+                iss = create_issuance_for_member(
+                    session, project_id=project_id,
+                    project_member_id=pm_id,
+                    recipient_organization=pm.organization_name,
+                    recipient_name=pm.representative_name,
+                    doc_type=doc_type,
+                    fiscal_year=today.year, month=today.month,
+                )
+                issuance_id = iss.id
+
+            iss = session.get(Issuance, issuance_id)
+            if iss is None:
+                return
+
+            if iss.status == "発行済み":
+                # 再発行：既存PDFを開く / 再生成
+                generate_and_open(iss, session)
+            else:
+                # 準備中 → 発行済みに更新してPDF生成
+                mark_as_issued(session, issuance_id,
+                               staff_id=current_user.get_id(),
+                               staff_name=current_user.get_name(),
+                               delivery_method=delivery)
+                iss = session.get(Issuance, issuance_id)
+                generate_and_open(iss, session)
+        except Exception as e:
+            QMessageBox.critical(self, "PDF生成エラー", str(e))
         finally:
             session.close()
         self._load_members()
 
-    def _issue(self):
-        sel = self._selected_pm()
-        if sel is None:
+    def _issue_all(self):
+        """全員まとめて発行ボタン：名簿全員ぶんを一括採番・発行・PDF生成する。"""
+        project_id = self._proj_combo.currentData()
+        if project_id is None:
             return
-        pm_id, issuance_id = sel
-        if issuance_id is None:
-            QMessageBox.warning(self, "エラー", "先に「準備（採番）」を行ってください。")
+        doc_type = self._doctype_combo.currentData()
+        label = self._doctype_combo.currentText()
+        ans = QMessageBox.question(
+            self, "確認",
+            f"名簿全員ぶんを{label}で発行します。よろしいですか？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if ans != QMessageBox.StandardButton.Yes:
             return
-        delivery = self._delivery_combo.currentText()
         session = get_session()
         try:
-            from app.database.models import Issuance
-            iss = session.get(Issuance, issuance_id)
-            if iss and iss.status == "発行済み":
-                # 再発行：既存PDFを開く or 再生成
-                from app.utils.pdf_helpers import generate_and_open
-                generate_and_open(iss, session)
+            from app.utils.pdf_helpers import get_company_and_bank, get_pdf_output_dir
+            from app.services.pdf.batch_pdf import generate_batch_pdf
+            company, bank = get_company_and_bank(session)
+            if not company or not company.name:
+                QMessageBox.warning(self, "エラー",
+                                    "設定→発行元情報に名称を登録してください。")
                 return
-            mark_as_issued(session, issuance_id,
-                           staff_id=current_user.get_id(),
-                           staff_name=current_user.get_name(),
-                           delivery_method=delivery)
-            iss = session.get(Issuance, issuance_id)
-            from app.utils.pdf_helpers import generate_and_open
-            generate_and_open(iss, session)
+            output_dir = get_pdf_output_dir()
+            paths = generate_batch_pdf(
+                session, project_id, company, output_dir, bank,
+                doc_type=doc_type,
+            )
+            QMessageBox.information(
+                self, "完了",
+                f"{len(paths)} 件のPDFを生成しました。\n保存先：{output_dir}",
+            )
         except Exception as e:
-            QMessageBox.critical(self, "PDF生成エラー", str(e))
+            QMessageBox.critical(self, "エラー", str(e))
         finally:
             session.close()
         self._load_members()
