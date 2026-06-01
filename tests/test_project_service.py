@@ -5,7 +5,7 @@ from app.services.project_service import (
     create_project, get_projects, activate_project, close_project,
     add_template_to_project, add_roster_entries,
     get_project_members, get_project_progress, remove_member_from_project,
-    copy_roster_from_project,
+    copy_roster_from_project, get_project_by_id,
 )
 
 
@@ -15,8 +15,24 @@ def test_create_project(db_session):
                           category_id=cat.id, fiscal_year=2026,
                           project_type="list")
     assert proj.id is not None
-    assert proj.status == "draft"
+    assert proj.status == "active"
     assert proj.fiscal_year == 2026
+
+
+def test_create_project_is_active(db_session):
+    from app.services.project_service import create_project
+    p = create_project(db_session, name="2026 青年部", category_id=None,
+                       fiscal_year=2026, project_type="list")
+    assert p.status == "active"
+
+
+def test_reopen_project(db_session):
+    from app.services.project_service import create_project, close_project, reopen_project, get_project_by_id
+    p = create_project(db_session, name="x", category_id=None, fiscal_year=2026, project_type="list")
+    close_project(db_session, p.id)
+    assert get_project_by_id(db_session, p.id).status == "closed"
+    reopen_project(db_session, p.id)
+    assert get_project_by_id(db_session, p.id).status == "active"
 
 
 def test_activate_project(db_session):

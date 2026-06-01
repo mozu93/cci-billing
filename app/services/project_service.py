@@ -9,7 +9,7 @@ def create_project(session: Session, name: str, category_id: int,
     proj = Project(
         name=name, category_id=category_id,
         fiscal_year=fiscal_year, project_type=project_type,
-        status="draft", notes=notes
+        status="active", notes=notes
     )
     session.add(proj)
     session.commit()
@@ -32,6 +32,13 @@ def get_project_by_id(session: Session, project_id: int) -> Project | None:
 
 
 def activate_project(session: Session, project_id: int) -> None:
+    proj = session.get(Project, project_id)
+    if proj:
+        proj.status = "active"
+        session.commit()
+
+
+def reopen_project(session: Session, project_id: int) -> None:
     proj = session.get(Project, project_id)
     if proj:
         proj.status = "active"

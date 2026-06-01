@@ -31,7 +31,7 @@ def test_rollover_creates_new_projects(db_session):
     )
     assert len(new_projects) == 1
     assert new_projects[0].fiscal_year == 2027
-    assert new_projects[0].status == "draft"
+    assert new_projects[0].status == "active"
     assert "2027年度" in new_projects[0].name
 
 

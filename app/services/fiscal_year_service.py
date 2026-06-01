@@ -26,7 +26,7 @@ def rollover_fiscal_year(session: Session,
             category_id=old_proj.category_id,
             fiscal_year=to_year,
             project_type=old_proj.project_type,
-            status="draft",
+            status="active",
             notes=old_proj.notes or "",
         )
         session.add(new_proj)
