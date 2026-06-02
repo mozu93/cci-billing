@@ -141,7 +141,15 @@ def get_project_progress(session: Session, project_id: int) -> dict:
     total = len(members)
     pm_ids = [pm.id for pm in members]
     if not pm_ids:
-        return {"total": 0, "issued": 0, "paid": 0, "pending": 0}
+        # 会員名簿を持たない（窓口/フリー発行など）プロジェクトは発行単位で集計
+        statuses = [row[0] for row in
+                    session.query(Issuance.status)
+                    .filter(Issuance.project_id == project_id).all()]
+        total = len(statuses)
+        issued = sum(1 for s in statuses if s in ("発行済み", "支払済み"))
+        paid = sum(1 for s in statuses if s == "支払済み")
+        return {"total": total, "issued": issued, "paid": paid,
+                "pending": total - issued}
     issued_pms = set(
         row[0] for row in
         session.query(Issuance.project_member_id)

@@ -19,6 +19,26 @@ def test_create_project(db_session):
     assert proj.fiscal_year == 2026
 
 
+def test_get_project_progress_counter(db_session):
+    """会員名簿を持たないフリー発行プロジェクトは発行単位で集計する。"""
+    from app.services.issuance_service import create_direct_issuance
+    lines = [{"item_template_id": None, "item_name": "コピー代",
+              "quantity": 1, "unit": "枚", "unit_price": 30, "tax_rate": 0}]
+    r = create_direct_issuance(
+        db_session, lines_data=lines, recipient_organization="A商店",
+        recipient_name="", doc_type="receipt", fiscal_year=2026, month=6,
+        project_name="その他")
+    create_direct_issuance(
+        db_session, lines_data=lines, recipient_organization="B商店",
+        recipient_name="", doc_type="invoice", fiscal_year=2026, month=6,
+        project_name="その他")
+    prog = get_project_progress(db_session, r.project_id)
+    assert prog["total"] == 2     # 発行2件
+    assert prog["issued"] == 2    # 領収書(支払済み)＋請求書(発行済み)
+    assert prog["paid"] == 1      # 領収書のみ入金済み
+    assert prog["pending"] == 0
+
+
 def test_create_project_is_active(db_session):
     from app.services.project_service import create_project
     p = create_project(db_session, name="2026 青年部", category_id=None,
