@@ -147,6 +147,24 @@ class IssuanceCounterWidget(QWidget):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._reload_master()
 
+    def _add_category_master(self):
+        """その場で新規業務名（カテゴリ）を登録し、選択肢に反映する。"""
+        from PyQt6.QtWidgets import QDialog
+        from app.ui.category_management import CategoryEditDialog
+        from app.services.category_service import create_category
+        dlg = CategoryEditDialog(self, title="業務名の登録")
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        name, sort_order = dlg.values()
+        if not name:
+            return
+        session = get_session()
+        try:
+            create_category(session, name, sort_order)
+        finally:
+            session.close()
+        self._reload_master()
+
     # ── UI構築 ───────────────────────────────────────────
 
     def _build(self):
@@ -216,6 +234,10 @@ class IssuanceCounterWidget(QWidget):
         btn_add.setFixedHeight(32)
         btn_add.clicked.connect(self._add_row)
         add_btn_row.addWidget(btn_add)
+        btn_new_cat = QPushButton("＋ 新規業務登録")
+        btn_new_cat.setFixedHeight(32)
+        btn_new_cat.clicked.connect(self._add_category_master)
+        add_btn_row.addWidget(btn_new_cat)
         btn_new_tmpl = QPushButton("＋ 新規テンプレート…")
         btn_new_tmpl.setFixedHeight(32)
         btn_new_tmpl.clicked.connect(self._add_template_master)

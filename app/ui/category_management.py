@@ -124,9 +124,10 @@ class CategoryManagementWidget(QWidget):
 
 
 class CategoryEditDialog(QDialog):
-    def __init__(self, parent=None, name: str = "", sort_order: int = 0):
+    def __init__(self, parent=None, name: str = "", sort_order: int = 0,
+                 title: str = "業務名の編集"):
         super().__init__(parent)
-        self.setWindowTitle("業務名の編集")
+        self.setWindowTitle(title)
         self.setFixedSize(320, 150)
         layout = QVBoxLayout(self)
 
