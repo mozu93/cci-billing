@@ -11,7 +11,7 @@ def test_widget_has_issue_and_batch_buttons(qtbot, memory_db):
     w = IssuanceFromProjectWidget()
     qtbot.addWidget(w)
     texts = _texts(w)
-    assert "発行" in texts
+    assert "選択した行を発行" in texts
     assert "全員まとめて発行" in texts
     # 旧2段階ボタンが無い
     assert "準備（採番）" not in texts
