@@ -16,6 +16,11 @@ class DashboardWidget(QWidget):
         self._build()
         self._load()
 
+    def showEvent(self, event):
+        # 画面を開くたびに最新の内容を表示する（更新ボタン不要）
+        super().showEvent(event)
+        self._load()
+
     def _build(self):
         layout = QVBoxLayout(self)
 
@@ -27,10 +32,7 @@ class DashboardWidget(QWidget):
             self._year_combo.addItem(f"{y}年度", y)
         self._year_combo.setCurrentIndex(1)
         self._year_combo.currentIndexChanged.connect(self._load)
-        btn_refresh = QPushButton("更新")
-        btn_refresh.clicked.connect(self._load)
         top_row.addWidget(self._year_combo)
-        top_row.addWidget(btn_refresh)
         btn_rollover = QPushButton("年度更新")
         btn_rollover.clicked.connect(self._rollover)
         top_row.addWidget(btn_rollover)

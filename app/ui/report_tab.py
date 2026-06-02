@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from app.database.connection import get_session
+from app.database.models import Issuance
 from app.services.report_service import (
     get_unpaid_report, get_payment_report,
     get_project_summary, export_to_excel
@@ -33,6 +34,11 @@ class _BaseReportWidget(QWidget):
         self._build()
         self._load()
 
+    def showEvent(self, event):
+        # タブを開くたびに最新の内容を表示する（更新ボタン不要）
+        super().showEvent(event)
+        self._load()
+
     def _build(self):
         layout = QVBoxLayout(self)
         top = QHBoxLayout()
@@ -45,24 +51,32 @@ class _BaseReportWidget(QWidget):
         self._year_combo.setCurrentIndex(2)
         self._year_combo.currentIndexChanged.connect(self._load)
         top.addWidget(self._year_combo)
-        btn_refresh = QPushButton("更新")
-        btn_refresh.clicked.connect(self._load)
-        top.addWidget(btn_refresh)
         btn_csv = QPushButton("CSV出力")
         btn_csv.clicked.connect(self._export_csv)
         top.addWidget(btn_csv)
         btn_excel = QPushButton("Excel出力")
         btn_excel.clicked.connect(self._export_excel)
         top.addWidget(btn_excel)
+        self._add_actions(top)
         top.addStretch()
         layout.addLayout(top)
         self._table = QTableWidget(0, len(self.HEADERS))
         self._table.setHorizontalHeaderLabels(self.HEADERS)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.cellDoubleClicked.connect(self._on_cell_double_clicked)
         layout.addWidget(self._table)
         self._count_label = QLabel("")
         layout.addWidget(self._count_label)
+
+    def _add_actions(self, top) -> None:
+        """サブクラスが操作ボタンを追加するためのフック。"""
+        pass
+
+    def _on_cell_double_clicked(self, row: int, col: int) -> None:
+        """サブクラスが行ダブルクリック時の挙動を実装するためのフック。"""
+        pass
 
     def _get_rows(self, session, fiscal_year) -> list[dict]:
         raise NotImplementedError
@@ -91,7 +105,7 @@ class _BaseReportWidget(QWidget):
             return
         import csv
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
-            writer = csv.DictWriter(f, fieldnames=self.KEYS)
+            writer = csv.DictWriter(f, fieldnames=self.KEYS, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(self._rows)
         QMessageBox.information(self, "完了", f"CSVを保存しました。\n{path}")
@@ -111,19 +125,60 @@ class _BaseReportWidget(QWidget):
 
 
 class UnpaidReportWidget(_BaseReportWidget):
-    HEADERS = ["発行番号", "名簿名", "年度", "事業所名", "代表者名", "会員番号", "金額", "状態"]
+    HEADERS = ["発行番号", "名簿名", "年度", "事業所名", "代表者名", "品目",
+               "会員番号", "金額", "状態"]
     KEYS = ["doc_number", "project_name", "fiscal_year", "organization_name",
-            "representative_name", "member_number", "amount", "status"]
+            "representative_name", "description", "member_number", "amount", "status"]
 
     def _get_rows(self, session, fiscal_year):
         from app.services.report_service import get_unpaid_report
         return get_unpaid_report(session, fiscal_year)
 
+    def _add_actions(self, top):
+        self._btn_preview = QPushButton("プレビュー")
+        self._btn_preview.setToolTip("選択した請求書のPDFを開いて内容を確認します")
+        self._btn_preview.clicked.connect(self._preview_selected)
+        top.addWidget(self._btn_preview)
+
+    def _on_cell_double_clicked(self, row, col):
+        self._preview_row(row)
+
+    def _preview_selected(self):
+        row = self._table.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "未選択",
+                                    "プレビューする行を選択してください。")
+            return
+        self._preview_row(row)
+
+    def _preview_row(self, row):
+        doc_item = self._table.item(row, 0)
+        if doc_item is None:
+            return
+        doc_number = doc_item.text()
+        from sqlalchemy.orm import joinedload
+        session = get_session()
+        try:
+            iss = (session.query(Issuance)
+                   .options(joinedload(Issuance.lines))
+                   .filter_by(doc_number=doc_number)
+                   .first())
+            if not iss:
+                QMessageBox.critical(self, "エラー", "発行データが見つかりません。")
+                return
+            from app.utils.pdf_helpers import generate_and_open
+            generate_and_open(iss, session)
+        except Exception as e:
+            QMessageBox.critical(self, "プレビューエラー", str(e))
+        finally:
+            session.close()
+
 
 class PaymentReportWidget(_BaseReportWidget):
-    HEADERS = ["入金日", "発行番号", "名簿名", "年度", "宛先", "入金額", "入金方法", "担当者"]
+    HEADERS = ["入金日", "発行番号", "名簿名", "年度", "宛先", "但し書き",
+               "入金額", "入金方法", "担当者"]
     KEYS = ["payment_date", "doc_number", "project_name", "fiscal_year",
-            "organization", "amount", "payment_method", "staff_name"]
+            "organization", "description", "amount", "payment_method", "staff_name"]
 
     def _get_rows(self, session, fiscal_year):
         from app.services.report_service import get_payment_report

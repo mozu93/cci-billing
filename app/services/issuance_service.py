@@ -212,6 +212,9 @@ def create_direct_issuance(session: Session, lines_data: list[dict],
     doc_number = get_next_doc_number(session, doc_type, fiscal_year, month)
     total = sum(int(l["unit_price"]) * int(l["quantity"]) for l in lines_data)
     now = datetime.now()
+    # 領収書は入金済みの証憑なので、発行と同時に入金を記録し「支払済み」にする。
+    # 請求書はその場では未入金なので「発行済み」のまま。
+    is_receipt = doc_type == "receipt"
     issuance = Issuance(
         project_id=sys_proj.id,
         project_member_id=None,
@@ -219,7 +222,7 @@ def create_direct_issuance(session: Session, lines_data: list[dict],
         recipient_name=recipient_name,
         doc_type=doc_type,
         doc_number=doc_number,
-        status="発行済み",
+        status="支払済み" if is_receipt else "発行済み",
         amount=total,
         issued_at=now,
         staff_id=staff_id,
@@ -238,6 +241,15 @@ def create_direct_issuance(session: Session, lines_data: list[dict],
             unit_price=ld["unit_price"],
             tax_rate=ld["tax_rate"],
             line_total=int(ld["unit_price"]) * int(ld["quantity"]),
+        ))
+    if is_receipt:
+        session.add(Payment(
+            issuance_id=issuance.id,
+            payment_date=now.date(),
+            amount=total,
+            payment_method="現金",
+            staff_id=staff_id,
+            staff_name=staff_name,
         ))
     session.commit()
     session.refresh(issuance)

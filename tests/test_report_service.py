@@ -49,11 +49,25 @@ def test_get_unpaid_report(db_session):
     assert rows[0]["organization_name"] == "△△産業"
 
 
+def test_get_unpaid_report_includes_description(db_session):
+    """未払い一覧に品目名（但し書き相当）が含まれる。"""
+    proj, issuances = _setup(db_session)
+    rows = get_unpaid_report(db_session, fiscal_year=2026)
+    assert rows[0]["description"] == "青年部会費"
+
+
 def test_get_payment_report(db_session):
     proj, issuances = _setup(db_session)
     rows = get_payment_report(db_session, fiscal_year=2026)
     assert len(rows) == 1
     assert rows[0]["amount"] == 10000
+
+
+def test_get_payment_report_includes_description(db_session):
+    """入金一覧に但し書き（発行明細の品目名）が含まれる。"""
+    proj, issuances = _setup(db_session)
+    rows = get_payment_report(db_session, fiscal_year=2026)
+    assert rows[0]["description"] == "青年部会費"
 
 
 def test_get_project_summary(db_session):

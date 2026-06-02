@@ -15,6 +15,11 @@ class BackupSettingsWidget(QWidget):
         self._build()
         self._load()
 
+    def showEvent(self, event):
+        # 画面を開くたびにバックアップ一覧を最新化する（更新ボタン不要）
+        super().showEvent(event)
+        self._load_list()
+
     def _build(self):
         layout = QVBoxLayout(self)
         grp = QGroupBox("バックアップ設定")
@@ -35,9 +40,6 @@ class BackupSettingsWidget(QWidget):
         btn_backup = QPushButton("今すぐバックアップ")
         btn_backup.clicked.connect(self._backup_now)
         btn_row.addWidget(btn_backup)
-        btn_refresh = QPushButton("一覧を更新")
-        btn_refresh.clicked.connect(self._load_list)
-        btn_row.addWidget(btn_refresh)
         btn_row.addStretch()
         layout.addLayout(btn_row)
         layout.addWidget(QLabel("バックアップ一覧："))

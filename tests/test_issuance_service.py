@@ -119,6 +119,42 @@ def test_pending_for_project_member(db_session):
     assert len(pending) == 1
 
 
+def test_create_direct_issuance_receipt_records_payment(db_session):
+    """フリー発行の領収書は入金（Payment）を記録し支払済みにする。"""
+    from app.services.issuance_service import create_direct_issuance
+    from app.database.models import Payment
+    lines = [{"item_template_id": None, "item_name": "証明手数料",
+              "quantity": 2, "unit": "通", "unit_price": 30, "tax_rate": 0}]
+    iss = create_direct_issuance(
+        db_session, lines_data=lines,
+        recipient_organization="", recipient_name="山田",
+        doc_type="receipt", fiscal_year=2026, month=6,
+        staff_name="田中", delivery_method="窓口手渡し",
+        project_name="その他",
+    )
+    assert iss.status == "支払済み"
+    payments = db_session.query(Payment).filter_by(issuance_id=iss.id).all()
+    assert len(payments) == 1
+    assert int(payments[0].amount) == 60
+    assert payments[0].staff_name == "田中"
+    assert payments[0].payment_date == date(2026, 6, 2) or payments[0].payment_date is not None
+
+
+def test_create_direct_issuance_invoice_no_payment(db_session):
+    """フリー発行の請求書は未入金なので Payment を作らず発行済みのまま。"""
+    from app.services.issuance_service import create_direct_issuance
+    from app.database.models import Payment
+    lines = [{"item_template_id": None, "item_name": "会費",
+              "quantity": 1, "unit": "式", "unit_price": 5000, "tax_rate": 0}]
+    iss = create_direct_issuance(
+        db_session, lines_data=lines,
+        recipient_organization="○○商事", recipient_name="",
+        doc_type="invoice", fiscal_year=2026, month=6,
+    )
+    assert iss.status == "発行済み"
+    assert db_session.query(Payment).filter_by(issuance_id=iss.id).count() == 0
+
+
 def test_create_counter_issuance(db_session):
     cat = create_category(db_session, "検定")
     tmpl = create_item_template(db_session, cat.id, "珠算検定受験料",

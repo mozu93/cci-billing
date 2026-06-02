@@ -19,12 +19,14 @@ def get_unpaid_report(session: Session,
     rows = []
     for iss, proj in q.all():
         pm = session.get(ProjectMember, iss.project_member_id) if iss.project_member_id else None
+        description = "、".join(l.item_name for l in iss.lines if l.item_name)
         rows.append({
             "doc_number":          iss.doc_number,
             "project_name":        proj.name,
             "fiscal_year":         proj.fiscal_year,
             "organization_name":   iss.recipient_organization or (pm.organization_name if pm else ""),
             "representative_name": iss.recipient_name or (pm.representative_name if pm else ""),
+            "description":         description,
             "member_number":       "",
             "amount":              int(iss.amount),
             "status":              iss.status,
@@ -47,12 +49,14 @@ def get_payment_report(session: Session,
 
     rows = []
     for payment, iss, proj in q.all():
+        description = "、".join(l.item_name for l in iss.lines if l.item_name)
         rows.append({
             "payment_date":   payment.payment_date.strftime("%Y/%m/%d"),
             "doc_number":     iss.doc_number,
             "project_name":   proj.name,
             "fiscal_year":    proj.fiscal_year,
             "organization":   iss.recipient_organization or iss.recipient_name,
+            "description":    description,
             "amount":         int(payment.amount),
             "payment_method": payment.payment_method,
             "staff_name":     payment.staff_name,
