@@ -143,6 +143,7 @@ class ProjectMember(Base):
     organization_kana = Column(String(200), default="")
     representative_name = Column(String(100), default="")
     representative_kana = Column(String(100), default="")
+    department = Column(String(100), default="")
     postal_code = Column(String(10), default="")
     address = Column(String(300), default="")
     phone = Column(String(50), default="")

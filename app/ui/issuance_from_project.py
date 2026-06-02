@@ -7,10 +7,50 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 from app.database.connection import get_session
 from app.services.project_service import (
-    get_projects, get_project_members, get_project_by_id, get_project_templates
+    get_projects, get_project_members, get_project_templates
 )
 from app.services.issuance_service import create_issuance_for_member, mark_as_issued
 from app.utils import current_user
+
+COL_CHK = 0
+COL_ORG = 1
+COL_REP = 2
+COL_STA = 3
+COL_NUM = 4
+
+
+class _CheckableTable(QTableWidget):
+    """チェックボックス列の Shift+クリック範囲選択に対応したテーブル。"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._last_checked_row: int = -1
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            idx = self.indexAt(event.pos())
+            if idx.isValid() and idx.column() == COL_CHK:
+                item = self.item(idx.row(), COL_CHK)
+                if item and (item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
+                    if (event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+                            and self._last_checked_row >= 0):
+                        # クリック後の状態＝現在の逆
+                        new_state = (Qt.CheckState.Unchecked
+                                     if item.checkState() == Qt.CheckState.Checked
+                                     else Qt.CheckState.Checked)
+                        r1 = min(self._last_checked_row, idx.row())
+                        r2 = max(self._last_checked_row, idx.row())
+                        self.blockSignals(True)
+                        for r in range(r1, r2 + 1):
+                            it = self.item(r, COL_CHK)
+                            if it:
+                                it.setCheckState(new_state)
+                        self.blockSignals(False)
+                        self._last_checked_row = idx.row()
+                        return  # super() を呼ばない（二重トグル防止）
+                    else:
+                        self._last_checked_row = idx.row()
+        super().mousePressEvent(event)
 
 
 class IssuanceFromProjectWidget(QWidget):
@@ -52,17 +92,27 @@ class IssuanceFromProjectWidget(QWidget):
         search_row.addWidget(self._search)
         layout.addLayout(search_row)
 
-        self._table = QTableWidget(0, 4)
+        self._table = _CheckableTable(0, 5)
         self._table.setHorizontalHeaderLabels(
-            ["事業所名", "代表者名", "ステータス", "発行番号"])
+            ["", "事業所名", "代表者名", "ステータス", "発行番号"])
+
+        # 列0ヘッダーにチェックボックスを設定（クリックで全選択/全解除）
+        hdr_item = QTableWidgetItem()
+        hdr_item.setCheckState(Qt.CheckState.Unchecked)
+        self._table.setHorizontalHeaderItem(COL_CHK, hdr_item)
+        self._table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
+
+        self._table.setColumnWidth(COL_CHK, 30)
         self._table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch)
+            COL_CHK, QHeaderView.ResizeMode.Fixed)
+        self._table.horizontalHeader().setSectionResizeMode(
+            COL_ORG, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self._table)
 
         btn_row = QHBoxLayout()
-        btn_issue = QPushButton("発行")
-        btn_issue.clicked.connect(self._issue_one)
+        btn_issue = QPushButton("選択した行を発行")
+        btn_issue.clicked.connect(self._issue_checked)
         btn_issue_all = QPushButton("全員まとめて発行")
         btn_issue_all.clicked.connect(self._issue_all)
         self._delivery_combo = QComboBox()
@@ -76,6 +126,27 @@ class IssuanceFromProjectWidget(QWidget):
 
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
+
+    # ── ヘッダークリック：全選択 / 全解除 ─────────────────────────
+
+    def _on_header_clicked(self, col: int):
+        if col != COL_CHK:
+            return
+        hdr = self._table.horizontalHeaderItem(COL_CHK)
+        if hdr is None:
+            return
+        new_state = (Qt.CheckState.Unchecked
+                     if hdr.checkState() == Qt.CheckState.Checked
+                     else Qt.CheckState.Checked)
+        hdr.setCheckState(new_state)
+        self._table.blockSignals(True)
+        for r in range(self._table.rowCount()):
+            it = self._table.item(r, COL_CHK)
+            if it:
+                it.setCheckState(new_state)
+        self._table.blockSignals(False)
+
+    # ── プロジェクト読み込み ───────────────────────────────────────
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -101,7 +172,6 @@ class IssuanceFromProjectWidget(QWidget):
         self._on_project_changed()
 
     def _on_project_changed(self):
-        """名簿選択時にdoctype_comboの既定値を推定してからメンバーを読み込む。"""
         project_id = self._proj_combo.currentData()
         if project_id is not None:
             session = get_session()
@@ -109,12 +179,13 @@ class IssuanceFromProjectWidget(QWidget):
                 doc_type = self._get_doc_type(session, project_id)
             finally:
                 session.close()
-            # doctype_comboをセット
             for i in range(self._doctype_combo.count()):
                 if self._doctype_combo.itemData(i) == doc_type:
                     self._doctype_combo.setCurrentIndex(i)
                     break
         self._load_members()
+
+    # ── メンバー一覧読み込み ──────────────────────────────────────
 
     def _load_members(self):
         project_id = self._proj_combo.currentData()
@@ -150,83 +221,110 @@ class IssuanceFromProjectWidget(QWidget):
         finally:
             session.close()
 
+        # テーブル再構築：チェック状態・範囲選択をリセット
+        self._table._last_checked_row = -1
+        hdr = self._table.horizontalHeaderItem(COL_CHK)
+        if hdr:
+            hdr.setCheckState(Qt.CheckState.Unchecked)
+
         self._table.setRowCount(0)
         for pm_id, pm, status, doc_number, issuance_id in pm_data:
             row = self._table.rowCount()
             self._table.insertRow(row)
-            for col, val in enumerate([
+
+            chk_item = QTableWidgetItem()
+            chk_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+            chk_item.setCheckState(Qt.CheckState.Unchecked)
+            self._table.setItem(row, COL_CHK, chk_item)
+
+            for col_offset, val in enumerate([
                 pm.organization_name or "",
                 pm.representative_name or "",
                 status, doc_number
             ]):
                 item = QTableWidgetItem(val)
                 item.setData(Qt.ItemDataRole.UserRole, (pm_id, issuance_id))
-                self._table.setItem(row, col, item)
+                self._table.setItem(row, col_offset + 1, item)
+
         self._status_label.setText(f"{len(pm_data)} 件表示")
 
-    def _selected_pm(self) -> tuple[int, int | None] | None:
-        row = self._table.currentRow()
-        if row < 0:
-            return None
-        item = self._table.item(row, 0)
-        if item is None:
-            return None
-        return item.data(Qt.ItemDataRole.UserRole)
+    # ── チェック済み行の取得 ──────────────────────────────────────
+
+    def _checked_rows(self) -> list[tuple[int, int | None]]:
+        result = []
+        for r in range(self._table.rowCount()):
+            chk = self._table.item(r, COL_CHK)
+            if chk and chk.checkState() == Qt.CheckState.Checked:
+                data_item = self._table.item(r, COL_ORG)
+                if data_item:
+                    result.append(data_item.data(Qt.ItemDataRole.UserRole))
+        return result
 
     def _get_doc_type(self, session, project_id: int) -> str:
         pts = get_project_templates(session, project_id)
         for pt in pts:
-            if pt.item_template.doc_type in ("receipt",):
+            if pt.item_template.doc_type == "receipt":
                 return "receipt"
         return "invoice"
 
-    def _issue_one(self):
-        """発行1ボタン：採番→発行→PDF生成を一括で行う。"""
-        sel = self._selected_pm()
-        if sel is None:
+    # ── 発行処理 ──────────────────────────────────────────────────
+
+    def _issue_checked(self):
+        """チェックされた行を発行する。"""
+        targets = self._checked_rows()
+        if not targets:
+            QMessageBox.information(self, "未選択",
+                                    "発行する行のチェックボックスにチェックを入れてください。")
             return
-        pm_id, issuance_id = sel
         project_id = self._proj_combo.currentData()
         doc_type = self._doctype_combo.currentData()
         delivery = self._delivery_combo.currentText()
+
         session = get_session()
+        errors = []
+        issued_ids = []
         try:
             from app.database.models import ProjectMember, Issuance
             from app.utils.pdf_helpers import generate_and_open
-            pm = session.get(ProjectMember, pm_id)
+            for pm_id, issuance_id in targets:
+                try:
+                    pm = session.get(ProjectMember, pm_id)
+                    if issuance_id is None:
+                        today = date.today()
+                        iss = create_issuance_for_member(
+                            session, project_id=project_id,
+                            project_member_id=pm_id,
+                            recipient_organization=pm.organization_name,
+                            recipient_name=pm.representative_name,
+                            doc_type=doc_type,
+                            fiscal_year=today.year, month=today.month,
+                        )
+                        issuance_id = iss.id
 
-            # 未採番なら採番
-            if issuance_id is None:
-                today = date.today()
-                iss = create_issuance_for_member(
-                    session, project_id=project_id,
-                    project_member_id=pm_id,
-                    recipient_organization=pm.organization_name,
-                    recipient_name=pm.representative_name,
-                    doc_type=doc_type,
-                    fiscal_year=today.year, month=today.month,
-                )
-                issuance_id = iss.id
+                    iss = session.get(Issuance, issuance_id)
+                    if iss is None:
+                        continue
+                    if iss.status != "発行済み":
+                        mark_as_issued(session, issuance_id,
+                                       staff_id=current_user.get_id(),
+                                       staff_name=current_user.get_name(),
+                                       delivery_method=delivery)
+                        iss = session.get(Issuance, issuance_id)
+                    issued_ids.append((iss, session))
+                except Exception as e:
+                    errors.append(str(e))
 
-            iss = session.get(Issuance, issuance_id)
-            if iss is None:
-                return
+            for iss, sess in issued_ids:
+                try:
+                    generate_and_open(iss, sess)
+                except Exception as e:
+                    errors.append(str(e))
 
-            if iss.status == "発行済み":
-                # 再発行：既存PDFを開く / 再生成
-                generate_and_open(iss, session)
-            else:
-                # 準備中 → 発行済みに更新してPDF生成
-                mark_as_issued(session, issuance_id,
-                               staff_id=current_user.get_id(),
-                               staff_name=current_user.get_name(),
-                               delivery_method=delivery)
-                iss = session.get(Issuance, issuance_id)
-                generate_and_open(iss, session)
-        except Exception as e:
-            QMessageBox.critical(self, "PDF生成エラー", str(e))
         finally:
             session.close()
+
+        if errors:
+            QMessageBox.critical(self, "PDF生成エラー", "\n".join(errors))
         self._load_members()
 
     def _issue_all(self):

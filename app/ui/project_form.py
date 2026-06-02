@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from app.database.connection import get_session
-from app.services.category_service import get_active_categories
+from app.services.category_service import get_active_categories, create_category
 from app.services.item_template_service import get_templates_by_category
 from app.services.project_service import (
     create_project, get_project_by_id,
@@ -38,7 +38,13 @@ class ProjectFormDialog(QDialog):
         self._notes = QTextEdit()
         self._notes.setFixedHeight(60)
 
-        form.addRow("業務名", self._category)
+        cat_row = QHBoxLayout()
+        cat_row.addWidget(self._category)
+        btn_new_cat = QPushButton("＋ 新規業務名…")
+        btn_new_cat.setFixedWidth(120)
+        btn_new_cat.clicked.connect(self._add_category_master)
+        cat_row.addWidget(btn_new_cat)
+        form.addRow("業務名", cat_row)
         form.addRow("年度", self._fiscal_year)
         form.addRow("備考", self._notes)
         layout.addLayout(form)
@@ -78,12 +84,42 @@ class ProjectFormDialog(QDialog):
         btn_row.addWidget(btn_ok)
         layout.addLayout(btn_row)
 
+        self._reload_categories()
+
+    def _reload_categories(self, select_id: int | None = None):
+        self._category.blockSignals(True)
+        self._category.clear()
         session = get_session()
         try:
             for cat in get_active_categories(session):
                 self._category.addItem(cat.name, cat.id)
         finally:
             session.close()
+        if select_id is not None:
+            for i in range(self._category.count()):
+                if self._category.itemData(i) == select_id:
+                    self._category.setCurrentIndex(i)
+                    break
+        self._category.blockSignals(False)
+        self._on_category_change(None)
+
+    def _add_category_master(self):
+        from app.ui.category_management import CategoryEditDialog
+        dlg = CategoryEditDialog(self)
+        dlg.setWindowTitle("業務名の新規追加")
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        name, sort_order = dlg.values()
+        if not name:
+            QMessageBox.warning(self, "入力エラー", "業務名を入力してください。")
+            return
+        session = get_session()
+        try:
+            cat = create_category(session, name, sort_order)
+            new_id = cat.id
+        finally:
+            session.close()
+        self._reload_categories(select_id=new_id)
 
     def _on_category_change(self, _):
         cat_id = self._category.currentData()

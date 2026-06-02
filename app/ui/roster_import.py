@@ -6,10 +6,18 @@ member_import.MemberImportDialog をベースに、
 - 取り込み先を会員マスタではなく事業名簿（add_roster_entries）に変更
 """
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QTextEdit,
+    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPlainTextEdit,
     QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
     QMessageBox, QHeaderView, QComboBox, QCheckBox, QGroupBox
 )
+from PyQt6.QtCore import QMimeData, Qt
+
+
+class _TsvPasteEdit(QPlainTextEdit):
+    """Excelからの貼り付け時にタブ文字を保持するためプレーンテキストのみ受け付ける。"""
+    def insertFromMimeData(self, source: QMimeData):
+        if source.hasText():
+            self.insertPlainText(source.text())
 from app.database.connection import get_session
 from app.utils.excel_utils import (
     ROSTER_COLUMNS, FIELD_LABELS, REQUIRED_ANY,
@@ -58,7 +66,7 @@ class RosterImportDialog(QDialog):
             "読み込み後、各項目にどの列を当てるかを選べます（列順がバラバラでも可）。"
         ))
 
-        self._paste_area = QTextEdit()
+        self._paste_area = _TsvPasteEdit()
         self._paste_area.setPlaceholderText("ここにExcelの内容を貼り付け（Ctrl+V）")
         self._paste_area.setFixedHeight(90)
         layout.addWidget(self._paste_area)
@@ -89,8 +97,13 @@ class RosterImportDialog(QDialog):
             combo = QComboBox()
             combo.currentIndexChanged.connect(self._refresh_preview)
             self._field_combos[field] = combo
-            map_layout.addWidget(QLabel(label), r, c)
+            lbl = QLabel(label)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            map_layout.addWidget(lbl, r, c)
             map_layout.addWidget(combo, r, c + 1)
+
+        map_layout.setColumnStretch(1, 1)
+        map_layout.setColumnStretch(3, 1)
 
         note = QLabel("※「事業所名」「代表者名」のいずれかが必要です。")
         note.setStyleSheet("color: #666; font-size: 11px;")
