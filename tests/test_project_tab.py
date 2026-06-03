@@ -15,3 +15,27 @@ def test_project_tab_buttons_simplified(qtbot, memory_db):
     assert "受付開始（active）" not in texts
     assert "一括PDF生成" not in texts
     assert "アーカイブ" not in texts
+
+
+def test_project_tab_shows_business_and_title_columns(qtbot, memory_db):
+    from app.database.connection import get_session
+    from app.services.category_service import create_category
+    from app.services.project_service import create_project
+    s = get_session()
+    cat = create_category(s, "不動産部会")
+    create_project(s, name="2026 視察研修会参加費", category_id=cat.id,
+                   fiscal_year=2026, project_type="list")
+    s.close()
+
+    from app.ui.project_tab import ProjectTab
+    w = ProjectTab()
+    qtbot.addWidget(w)
+    headers = [w._table.horizontalHeaderItem(i).text()
+               for i in range(w._table.columnCount())]
+    assert headers[0] == "業務名"
+    assert headers[1] == "件名"
+
+    cells = []
+    for r in range(w._table.rowCount()):
+        cells.append((w._table.item(r, 0).text(), w._table.item(r, 1).text()))
+    assert ("不動産部会", "2026 視察研修会参加費") in cells

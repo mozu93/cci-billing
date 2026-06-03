@@ -33,7 +33,7 @@ class ProjectTab(QWidget):
         self._year_combo.currentIndexChanged.connect(self._load)
         top_row.addWidget(self._year_combo)
 
-        btn_add = QPushButton("＋ 新規名簿登録")
+        btn_add = QPushButton("＋ 新規 請求・領収書データ")
         btn_add.clicked.connect(self._add)
         btn_edit = QPushButton("編集")
         btn_edit.clicked.connect(self._edit)
@@ -53,11 +53,11 @@ class ProjectTab(QWidget):
 
         splitter = QSplitter(Qt.Orientation.Vertical)
 
-        self._table = QTableWidget(0, 5)
+        self._table = QTableWidget(0, 6)
         self._table.setHorizontalHeaderLabels(
-            ["名簿名", "状態", "全件", "発行済", "未発行"])
+            ["業務名", "件名", "状態", "全件", "発行済", "未発行"])
         self._table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch)
+            1, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.currentCellChanged.connect(self._on_select)
         splitter.addWidget(self._table)
@@ -84,6 +84,8 @@ class ProjectTab(QWidget):
         status = self._status_combo.currentData()
         session = get_session()
         try:
+            from app.database.models import Category
+            cat_name = {c.id: c.name for c in session.query(Category).all()}
             projects = get_projects(session, fiscal_year=year, status=status)
             self._table.setRowCount(0)
             for proj in projects:
@@ -91,7 +93,7 @@ class ProjectTab(QWidget):
                 row = self._table.rowCount()
                 self._table.insertRow(row)
                 for col, val in enumerate([
-                    proj.name, proj.status,
+                    cat_name.get(proj.category_id, ""), proj.name, proj.status,
                     str(p["total"]), str(p["issued"]), str(p["pending"])
                 ]):
                     item = QTableWidgetItem(val)
