@@ -61,7 +61,7 @@ class ReissueWidget(QWidget):
 
         self._table = QTableWidget(0, 7)
         self._table.setHorizontalHeaderLabels(
-            ["発行番号", "名簿名", "宛先", "金額", "種別", "状態", "発行日"])
+            ["発行番号", "件名", "宛先", "金額", "種別", "状態", "発行日"])
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(COL_PROJ, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(COL_DEST, QHeaderView.ResizeMode.Stretch)

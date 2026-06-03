@@ -125,7 +125,7 @@ class _BaseReportWidget(QWidget):
 
 
 class UnpaidReportWidget(_BaseReportWidget):
-    HEADERS = ["発行番号", "名簿名", "年度", "事業所名", "代表者名", "品目",
+    HEADERS = ["発行番号", "件名", "年度", "事業所名", "代表者名", "品目",
                "会員番号", "金額", "状態"]
     KEYS = ["doc_number", "project_name", "fiscal_year", "organization_name",
             "representative_name", "description", "member_number", "amount", "status"]
@@ -175,7 +175,7 @@ class UnpaidReportWidget(_BaseReportWidget):
 
 
 class PaymentReportWidget(_BaseReportWidget):
-    HEADERS = ["入金日", "発行番号", "名簿名", "年度", "宛先", "但し書き",
+    HEADERS = ["入金日", "発行番号", "件名", "年度", "宛先", "但し書き",
                "入金額", "入金方法", "担当者"]
     KEYS = ["payment_date", "doc_number", "project_name", "fiscal_year",
             "organization", "description", "amount", "payment_method", "staff_name"]
@@ -186,7 +186,7 @@ class PaymentReportWidget(_BaseReportWidget):
 
 
 class ProjectSummaryWidget(_BaseReportWidget):
-    HEADERS = ["年度", "名簿名", "全件", "発行済", "支払済", "未発行", "総額", "入金額"]
+    HEADERS = ["年度", "件名", "全件", "発行済", "支払済", "未発行", "総額", "入金額"]
     KEYS = ["fiscal_year", "project_name", "total", "issued",
             "paid", "pending", "total_amount", "paid_amount"]
 
