@@ -113,6 +113,7 @@ class IssuanceCounterWidget(QWidget):
         super().__init__()
         self._categories = []
         self._templates  = []
+        self._cat_name_by_id: dict[int, str] = {}
         self._rows: list[_LineRow] = []
         self._cell_style = QStyleFactory.create("Fusion")
         self._build()
@@ -130,6 +131,7 @@ class IssuanceCounterWidget(QWidget):
             self._templates  = get_all_active_templates(session)
         finally:
             session.close()
+        self._cat_name_by_id = {c.id: c.name for c in self._categories}
         for row in self._rows:
             self._refresh_cat_combo(row.cat_combo)
             self._refresh_tmpl_combo(row)
@@ -306,7 +308,13 @@ class IssuanceCounterWidget(QWidget):
         row.tmpl_combo.clear()
         row.tmpl_combo.addItem("（項目を選択）", None)
         for t in candidates:
-            row.tmpl_combo.addItem(f"{t.name}　¥{int(t.unit_price):,}/{t.unit}", t.id)
+            label = f"{t.name}　¥{int(t.unit_price):,}/{t.unit}"
+            # 業務名で絞り込んでいないときは、同名項目を見分けられるよう業務名を併記
+            if cat_id is None:
+                cname = self._cat_name_by_id.get(t.category_id)
+                if cname:
+                    label = f"{t.name}（{cname}）　¥{int(t.unit_price):,}/{t.unit}"
+            row.tmpl_combo.addItem(label, t.id)
         restored = False
         if cur_id is not None:
             for i in range(row.tmpl_combo.count()):
@@ -362,6 +370,23 @@ class IssuanceCounterWidget(QWidget):
 
     # ── 発行 ─────────────────────────────────────────────
 
+    def _derive_project_name(self) -> str:
+        """選択された項目（テンプレート）の業務名から集計先プロジェクト名を決める。
+
+        業務名コンボの選択ではなく、項目自身が属する業務名を使うので、
+        業務名を選ばずに項目だけ選んでも正しい業務名に集計される。
+        """
+        seen: dict[str, bool] = {}
+        for row in self._rows:
+            tmpl_id = row.tmpl_combo.currentData()
+            tmpl = next((t for t in self._templates if t.id == tmpl_id), None)
+            if tmpl is None:
+                continue
+            name = self._cat_name_by_id.get(tmpl.category_id)
+            if name and name not in seen:
+                seen[name] = True
+        return "・".join(seen.keys()) if seen else "直接発行"
+
     def _issue(self):
         org = self._org_name.text().strip()
         rep = self._rep_name.text().strip()
@@ -397,16 +422,10 @@ class IssuanceCounterWidget(QWidget):
         if not lines_data:
             QMessageBox.warning(self, "エラー",
                                 "項目が選択されていません。\n"
-                                "各行で業務名と項目を選択してください。")
+                                "各行で項目を選択してください。")
             return
 
-        seen = {}
-        for row in self._rows:
-            cat_id = row.cat_combo.currentData()
-            cat = next((c for c in self._categories if c.id == cat_id), None)
-            if cat and cat.name not in seen:
-                seen[cat.name] = True
-        project_name = "・".join(seen.keys()) if seen else "直接発行"
+        project_name = self._derive_project_name()
 
         doc_type = self._doc_type.currentData()
         fmt      = "a4" if doc_type == "invoice" else "a5"
