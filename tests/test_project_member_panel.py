@@ -35,3 +35,22 @@ def test_panel_has_add_and_copy_buttons(qtbot, memory_db):
     texts = _button_texts(panel)
     assert "行を追加" in texts
     assert "他の名簿からコピー" in texts
+
+
+def test_member_panel_has_registration_date_column(qtbot, memory_db):
+    from app.ui.project_member_panel import ProjectMemberPanel
+    from app.services.project_service import create_project, add_roster_entries
+    from app.database.connection import get_session
+    s = get_session()
+    proj = create_project(s, name="2026 視察研修", category_id=None,
+                          fiscal_year=2026, project_type="list")
+    add_roster_entries(s, proj.id, [{"organization_name": "○○商事"}])
+    pid = proj.id
+    s.close()
+
+    panel = ProjectMemberPanel(pid)
+    qtbot.addWidget(panel)
+    headers = [panel._table.horizontalHeaderItem(i).text()
+               for i in range(panel._table.columnCount())]
+    assert "登録日" in headers
+    assert panel._table.isSortingEnabled()

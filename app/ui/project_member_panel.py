@@ -140,12 +140,13 @@ class ProjectMemberPanel(QWidget):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        self._table = QTableWidget(0, 4)
+        self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(
-            ["事業所名", "代表者名", "メール", "電話"])
+            ["事業所名", "代表者名", "メール", "電話", "登録日"])
         self._table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.setSortingEnabled(True)
         self._table.doubleClicked.connect(self._edit_entry)
         layout.addWidget(self._table)
         self._count_label = QLabel("")
@@ -154,23 +155,27 @@ class ProjectMemberPanel(QWidget):
     def _load(self):
         session = get_session()
         try:
-            pms = get_project_members(session, self._project_id)
+            pms = get_project_members(session, self._project_id, newest_first=True)
         finally:
             session.close()
+        self._table.setSortingEnabled(False)
         self._table.setRowCount(0)
         for pm in pms:
             row = self._table.rowCount()
             self._table.insertRow(row)
+            reg = pm.created_at.strftime("%Y/%m/%d") if pm.created_at else ""
             vals = [
                 pm.organization_name or "",
                 pm.representative_name or "",
                 pm.email or "",
                 pm.phone or "",
+                reg,
             ]
             for col, val in enumerate(vals):
                 item = QTableWidgetItem(val)
                 item.setData(Qt.ItemDataRole.UserRole, pm.id)
                 self._table.setItem(row, col, item)
+        self._table.setSortingEnabled(True)
         self._count_label.setText(f"{len(pms)} 件")
 
     def _add_entry(self):
