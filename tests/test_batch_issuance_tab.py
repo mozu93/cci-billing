@@ -12,4 +12,16 @@ def test_batch_issuance_subtabs(qtbot, memory_db):
     qtbot.addWidget(w)
     inner = w.findChild(QTabWidget)
     assert inner is not None
-    assert _tab_titles(inner) == ["名簿登録", "登録名簿から発行", "入金管理"]
+    assert _tab_titles(inner) == ["請求・領収書データ", "登録データから発行", "入金管理"]
+
+
+def test_batch_issuance_tab_titles_renamed(qtbot, memory_db):
+    from PyQt6.QtWidgets import QTabWidget
+    from app.ui.batch_issuance_tab import BatchIssuanceTab
+    w = BatchIssuanceTab()
+    qtbot.addWidget(w)
+    inner = w.findChild(QTabWidget)
+    titles = [inner.tabText(i) for i in range(inner.count())]
+    assert "請求・領収書データ" in titles
+    assert "登録データから発行" in titles
+    assert "名簿登録" not in titles
