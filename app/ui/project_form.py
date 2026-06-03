@@ -79,6 +79,18 @@ class ProjectFormDialog(QDialog):
         grp_layout.addLayout(right)
         layout.addWidget(grp)
 
+        preview_row = QHBoxLayout()
+        preview_row.addWidget(QLabel("プレビュー種別："))
+        self._doc_type = QComboBox()
+        self._doc_type.addItem("請求書", "invoice")
+        self._doc_type.addItem("領収書", "receipt")
+        preview_row.addWidget(self._doc_type)
+        btn_preview = QPushButton("プレビュー（宛先空）")
+        btn_preview.clicked.connect(self._preview)
+        preview_row.addWidget(btn_preview)
+        preview_row.addStretch()
+        layout.addLayout(preview_row)
+
         btn_row = QHBoxLayout()
         btn_cancel = QPushButton("キャンセル")
         btn_cancel.clicked.connect(self.reject)
@@ -182,6 +194,37 @@ class ProjectFormDialog(QDialog):
                 item = QListWidgetItem(f"{tmpl.name}（¥{int(tmpl.unit_price):,}）")
                 item.setData(Qt.ItemDataRole.UserRole, tmpl.id)
                 self._selected_list.addItem(item)
+        finally:
+            session.close()
+
+    def _preview(self):
+        if self._selected_list.count() == 0:
+            QMessageBox.warning(self, "プレビュー不可",
+                                "請求項目テンプレートを1つ以上選択してください。")
+            return
+        from app.database.models import ItemTemplate
+        from app.utils import pdf_helpers
+        session = get_session()
+        try:
+            lines_data = []
+            for i in range(self._selected_list.count()):
+                tmpl_id = self._selected_list.item(i).data(Qt.ItemDataRole.UserRole)
+                t = session.get(ItemTemplate, tmpl_id)
+                if t is None:
+                    continue
+                lines_data.append({
+                    "item_template_id": t.id,
+                    "item_name": t.name,
+                    "quantity": 1,
+                    "unit": t.unit,
+                    "unit_price": int(t.unit_price),
+                    "tax_rate": t.tax_rate,
+                })
+            try:
+                pdf_helpers.generate_preview(
+                    lines_data, self._doc_type.currentData(), session)
+            except Exception as e:
+                QMessageBox.critical(self, "プレビューエラー", str(e))
         finally:
             session.close()
 

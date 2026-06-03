@@ -61,3 +61,27 @@ def test_project_form_requires_title(qtbot, memory_db, monkeypatch):
     count = len(get_projects(s))
     s.close()
     assert count == 0  # 件名未入力なので作成されない
+
+
+def test_project_form_preview_uses_selected_templates(qtbot, memory_db, monkeypatch):
+    cat_id, t_id = _seed_category_and_template()
+    captured = {}
+    import app.utils.pdf_helpers as ph
+    monkeypatch.setattr(ph, "generate_preview",
+                        lambda lines, doc_type, session: captured.update(
+                            lines=lines, doc_type=doc_type) or "ok")
+    from app.ui.project_form import ProjectFormDialog
+    dlg = ProjectFormDialog()
+    qtbot.addWidget(dlg)
+    _select_category(dlg, cat_id)
+    _add_template(dlg, t_id)
+    # 種別＝領収書を選ぶ
+    ridx = next(i for i in range(dlg._doc_type.count())
+                if dlg._doc_type.itemData(i) == "receipt")
+    dlg._doc_type.setCurrentIndex(ridx)
+    dlg._preview()
+
+    assert captured["doc_type"] == "receipt"
+    assert len(captured["lines"]) == 1
+    assert captured["lines"][0]["item_name"] == "視察研修会参加費"
+    assert int(captured["lines"][0]["unit_price"]) == 5000
