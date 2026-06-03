@@ -20,7 +20,8 @@ class ProjectFormDialog(QDialog):
     def __init__(self, project_id: int | None = None, parent=None):
         super().__init__(parent)
         self._project_id = project_id
-        self.setWindowTitle("名簿登録" if project_id is None else "名簿編集")
+        self.setWindowTitle("請求・領収書データの登録" if project_id is None
+                            else "請求・領収書データの編集")
         self.resize(560, 580)
         self._build()
         if project_id:
@@ -45,6 +46,9 @@ class ProjectFormDialog(QDialog):
         btn_new_cat.clicked.connect(self._add_category_master)
         cat_row.addWidget(btn_new_cat)
         form.addRow("業務名", cat_row)
+        self._title = QLineEdit()
+        self._title.setPlaceholderText("件名（例：2026 視察研修会参加費）")
+        form.addRow("件名", self._title)
         form.addRow("年度", self._fiscal_year)
         form.addRow("備考", self._notes)
         layout.addLayout(form)
@@ -166,6 +170,7 @@ class ProjectFormDialog(QDialog):
             proj = get_project_by_id(session, project_id)
             if not proj:
                 return
+            self._title.setText(proj.name or "")
             self._fiscal_year.setValue(proj.fiscal_year)
             self._notes.setPlainText(proj.notes or "")
             for i in range(self._category.count()):
@@ -182,9 +187,13 @@ class ProjectFormDialog(QDialog):
 
     def _save(self):
         cat_id = self._category.currentData()
-        name = self._category.currentText().strip()
-        if not name or cat_id is None:
+        business = self._category.currentText().strip()
+        title = self._title.text().strip()
+        if not business or cat_id is None:
             QMessageBox.warning(self, "入力エラー", "業務名を選択してください。")
+            return
+        if not title:
+            QMessageBox.warning(self, "入力エラー", "件名を入力してください。")
             return
         if self._selected_list.count() == 0:
             QMessageBox.warning(self, "入力エラー", "テンプレートを1つ以上選択してください。")
@@ -193,7 +202,7 @@ class ProjectFormDialog(QDialog):
         try:
             if self._project_id is None:
                 proj = create_project(
-                    session, name=name,
+                    session, name=title,
                     category_id=cat_id,
                     fiscal_year=self._fiscal_year.value(),
                     project_type="list",
@@ -204,7 +213,7 @@ class ProjectFormDialog(QDialog):
                     add_template_to_project(session, proj.id, tmpl_id, sort_order=i)
             else:
                 proj = get_project_by_id(session, self._project_id)
-                proj.name = name
+                proj.name = title
                 proj.category_id = cat_id
                 proj.fiscal_year = self._fiscal_year.value()
                 proj.notes = self._notes.toPlainText().strip()
