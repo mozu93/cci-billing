@@ -63,6 +63,23 @@ def test_project_form_requires_title(qtbot, memory_db, monkeypatch):
     assert count == 0  # 件名未入力なので作成されない
 
 
+def test_project_form_preview_warns_when_no_company(qtbot, memory_db, monkeypatch):
+    """会社情報未登録(generate_preview=None)のとき警告を表示する。"""
+    cat_id, t_id = _seed_category_and_template()
+    import app.ui.project_form as pf
+    import app.utils.pdf_helpers as ph
+    monkeypatch.setattr(ph, "generate_preview", lambda lines, doc_type, session: None)
+    warnings = []
+    monkeypatch.setattr(pf.QMessageBox, "warning",
+                        lambda *a, **k: warnings.append(a))
+    dlg = pf.ProjectFormDialog()
+    qtbot.addWidget(dlg)
+    _select_category(dlg, cat_id)
+    _add_template(dlg, t_id)
+    dlg._preview()
+    assert len(warnings) == 1  # プレビュー不可の警告が1回出る
+
+
 def test_project_form_preview_uses_selected_templates(qtbot, memory_db, monkeypatch):
     cat_id, t_id = _seed_category_and_template()
     captured = {}

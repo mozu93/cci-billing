@@ -221,8 +221,13 @@ class ProjectFormDialog(QDialog):
                     "tax_rate": t.tax_rate,
                 })
             try:
-                pdf_helpers.generate_preview(
+                result = pdf_helpers.generate_preview(
                     lines_data, self._doc_type.currentData(), session)
+                if result is None:
+                    QMessageBox.warning(
+                        self, "プレビュー不可",
+                        "自社情報（会社設定）が未登録のためプレビューできません。\n"
+                        "設定 → 会社情報 から登録してください。")
             except Exception as e:
                 QMessageBox.critical(self, "プレビューエラー", str(e))
         finally:

@@ -63,7 +63,7 @@ class IssuanceFromProjectWidget(QWidget):
         layout = QVBoxLayout(self)
 
         top = QHBoxLayout()
-        top.addWidget(QLabel("名簿："))
+        top.addWidget(QLabel("件名："))
         self._proj_combo = QComboBox()
         self._proj_combo.setMinimumWidth(300)
         self._proj_combo.currentIndexChanged.connect(self._on_project_changed)

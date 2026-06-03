@@ -1,9 +1,19 @@
 """Tests for IssuanceFromProjectWidget (TDD)."""
-from PyQt6.QtWidgets import QPushButton, QComboBox
+from PyQt6.QtWidgets import QPushButton, QComboBox, QLabel
 
 
 def _texts(w):
     return [b.text() for b in w.findChildren(QPushButton)]
+
+
+def test_widget_uses_kenmei_label(qtbot, memory_db):
+    """発行元の選択ラベルが用語統一で「件名：」になっている。"""
+    from app.ui.issuance_from_project import IssuanceFromProjectWidget
+    w = IssuanceFromProjectWidget()
+    qtbot.addWidget(w)
+    labels = [lb.text() for lb in w.findChildren(QLabel)]
+    assert "件名：" in labels
+    assert "名簿：" not in labels
 
 
 def test_widget_has_issue_and_batch_buttons(qtbot, memory_db):
