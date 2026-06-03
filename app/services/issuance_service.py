@@ -350,7 +350,7 @@ def search_unpaid_invoices(session: Session, query: str,
     invoices = (session.query(Issuance)
                 .filter(Issuance.doc_type == "invoice",
                         Issuance.status == "発行済み")
-                .order_by(Issuance.issued_at.desc())
+                .order_by(Issuance.issued_at.desc().nulls_last())
                 .all())
     results = []
     for iss in invoices:

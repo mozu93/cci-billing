@@ -262,6 +262,13 @@ def test_search_unpaid_invoices(db_session):
     # マッチしない検索語では出ない
     assert search_unpaid_invoices(db_session, "存在しない名前") == []
 
+    # フリガナでもヒットする
+    pm.organization_kana = "マルマルショウジ"
+    db_session.commit()
+    kana_hits = search_unpaid_invoices(db_session, "マルマルショウジ")
+    assert len(kana_hits) == 1
+    assert kana_hits[0].id == inv.id
+
     # 支払済みになると一覧から外れる
     record_payment(db_session, inv.id, payment_date=date(2026, 5, 30),
                    amount=int(inv.amount), payment_method="現金", staff_name="田中")
