@@ -277,7 +277,8 @@ def issue_receipt_for_invoice(session: Session, invoice_id: int,
                               payment_method: str = "現金",
                               notes: str = "",
                               staff_id: int | None = None,
-                              staff_name: str = "") -> Issuance:
+                              staff_name: str = "",
+                              delivery_method: str = "窓口手渡し") -> Issuance:
     """発行済み請求書から領収書を発行し、入金を記録して請求書を支払済みにする。
 
     領収書は元請求書の明細・金額・宛名をそのまま引き継ぐ。
@@ -288,9 +289,11 @@ def issue_receipt_for_invoice(session: Session, invoice_id: int,
         raise ValueError("請求書が見つかりません。")
     if invoice.doc_type != "invoice":
         raise ValueError("請求書ではありません。")
+    if invoice.status == "支払済み":
+        raise ValueError("既に支払済みの請求書です。")
 
-    today = date.today()
-    doc_number = get_next_doc_number(session, "receipt", today.year, today.month)
+    now = datetime.now()
+    doc_number = get_next_doc_number(session, "receipt", now.year, now.month)
     receipt = Issuance(
         project_id=invoice.project_id,
         project_member_id=invoice.project_member_id,
@@ -300,10 +303,10 @@ def issue_receipt_for_invoice(session: Session, invoice_id: int,
         doc_number=doc_number,
         status="支払済み",
         amount=invoice.amount,
-        issued_at=datetime.now(),
+        issued_at=now,
         staff_id=staff_id,
         staff_name=staff_name,
-        delivery_method="窓口手渡し",
+        delivery_method=delivery_method,
     )
     session.add(receipt)
     session.flush()

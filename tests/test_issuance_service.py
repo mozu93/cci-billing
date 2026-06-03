@@ -212,3 +212,27 @@ def test_issue_receipt_for_invoice(db_session):
     payments = db_session.query(Payment).filter_by(issuance_id=invoice.id).all()
     assert len(payments) == 1
     assert int(payments[0].amount) == int(invoice.amount)
+    assert payments[0].payment_method == "現金"
+    assert payments[0].notes == "窓口入金"
+
+
+def test_issue_receipt_for_invoice_rejects_paid(db_session):
+    import pytest
+    from app.services.issuance_service import (
+        create_issuance_for_member, mark_as_issued, issue_receipt_for_invoice,
+    )
+    from datetime import date
+    proj, tmpl, pm = _setup(db_session)
+    invoice = create_issuance_for_member(
+        db_session, proj.id, pm.id,
+        recipient_organization=pm.organization_name,
+        recipient_name=pm.representative_name,
+        doc_type="invoice", fiscal_year=2026, month=5,
+    )
+    mark_as_issued(db_session, invoice.id, None, "田中", "窓口手渡し")
+    issue_receipt_for_invoice(db_session, invoice_id=invoice.id,
+                              payment_date=date(2026, 5, 30), staff_name="田中")
+    # 2回目は拒否される
+    with pytest.raises(ValueError):
+        issue_receipt_for_invoice(db_session, invoice_id=invoice.id,
+                                  payment_date=date(2026, 5, 30), staff_name="田中")
