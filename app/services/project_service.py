@@ -122,11 +122,12 @@ def copy_roster_from_project(session: Session, src_project_id: int,
     return add_roster_entries(session, dst_project_id, entries)
 
 
-def get_project_members(session: Session, project_id: int) -> list[ProjectMember]:
-    return (session.query(ProjectMember)
-            .filter_by(project_id=project_id)
-            .order_by(ProjectMember.sort_order)
-            .all())
+def get_project_members(session: Session, project_id: int,
+                        newest_first: bool = False) -> list[ProjectMember]:
+    q = session.query(ProjectMember).filter_by(project_id=project_id)
+    if newest_first:
+        return q.order_by(ProjectMember.created_at.desc()).all()
+    return q.order_by(ProjectMember.sort_order).all()
 
 
 def remove_member_from_project(session: Session, project_member_id: int) -> None:

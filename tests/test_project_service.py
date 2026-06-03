@@ -131,3 +131,21 @@ def test_roster_member_has_created_at(db_session):
     add_roster_entries(db_session, proj.id, [{"organization_name": "○○商事"}])
     pm = get_project_members(db_session, proj.id)[0]
     assert isinstance(pm.created_at, datetime)
+
+
+def test_get_project_members_newest_first(db_session):
+    """newest_first=True で登録日の新しい順に並ぶ。"""
+    from datetime import datetime
+    from app.services.project_service import create_project, get_project_members
+    from app.database.models import ProjectMember
+    proj = create_project(db_session, name="2026 視察研修", category_id=None,
+                          fiscal_year=2026, project_type="list")
+    old = ProjectMember(project_id=proj.id, organization_name="先に登録",
+                        sort_order=0, created_at=datetime(2026, 6, 1, 9, 0, 0))
+    new = ProjectMember(project_id=proj.id, organization_name="後で登録",
+                        sort_order=1, created_at=datetime(2026, 6, 3, 9, 0, 0))
+    db_session.add_all([old, new])
+    db_session.commit()
+    members = get_project_members(db_session, proj.id, newest_first=True)
+    assert members[0].organization_name == "後で登録"
+    assert members[1].organization_name == "先に登録"
