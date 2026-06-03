@@ -146,3 +146,51 @@ def flush_a4_queue(session) -> str | None:
 
 def get_a4_queue_count() -> int:
     return len(_a4_queue)
+
+
+def build_preview_issuance(lines_data: list[dict], doc_type: str):
+    """宛先空のプレビュー用 Issuance（セッション未追加・非永続）を組み立てる。"""
+    from datetime import datetime
+    from app.database.models import Issuance, IssuanceLine
+    lines = []
+    total = 0
+    for ld in lines_data:
+        line_total = int(ld["unit_price"]) * int(ld["quantity"])
+        total += line_total
+        lines.append(IssuanceLine(
+            item_template_id=ld.get("item_template_id"),
+            item_name=ld["item_name"],
+            quantity=ld["quantity"],
+            unit=ld["unit"],
+            unit_price=ld["unit_price"],
+            tax_rate=ld["tax_rate"],
+            line_total=line_total,
+        ))
+    return Issuance(
+        project_id=None, project_member_id=None,
+        recipient_organization="", recipient_name="",
+        doc_type=doc_type, doc_number="（プレビュー）",
+        status="プレビュー", amount=total,
+        issued_at=datetime.now(), lines=lines,
+    )
+
+
+def generate_preview(lines_data: list[dict], doc_type: str, session) -> str | None:
+    """プレビュー用PDFを一時ファイルに生成して開く（DBには書き込まない）。"""
+    import os
+    company, bank = get_company_and_bank(session)
+    if not company:
+        return None
+    seal = get_default_seal(session, company)
+    output_dir = get_pdf_output_dir()
+    path = os.path.join(output_dir, "_preview.pdf")
+    issuance = build_preview_issuance(lines_data, doc_type)
+    if doc_type == "invoice":
+        from app.services.pdf.invoice_pdf import generate_invoice_pdf
+        generate_invoice_pdf(issuance, company, path, bank, seal_image=seal)
+    else:
+        from app.services.pdf.receipt_pdf import generate_receipt_pdf
+        generate_receipt_pdf(issuance, company, path, seal_image=seal)
+    from app.services.print_service import open_pdf
+    open_pdf(path)
+    return path
