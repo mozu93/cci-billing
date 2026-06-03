@@ -270,3 +270,66 @@ def get_project_issuances(session: Session, project_id: int,
     if status:
         q = q.filter(Issuance.status == status)
     return q.order_by(Issuance.created_at.desc()).all()
+
+
+def issue_receipt_for_invoice(session: Session, invoice_id: int,
+                              payment_date: date,
+                              payment_method: str = "現金",
+                              notes: str = "",
+                              staff_id: int | None = None,
+                              staff_name: str = "") -> Issuance:
+    """発行済み請求書から領収書を発行し、入金を記録して請求書を支払済みにする。
+
+    領収書は元請求書の明細・金額・宛名をそのまま引き継ぐ。
+    入金額は請求書の全額固定。全体を1トランザクションで実行する。
+    """
+    invoice = session.get(Issuance, invoice_id)
+    if invoice is None:
+        raise ValueError("請求書が見つかりません。")
+    if invoice.doc_type != "invoice":
+        raise ValueError("請求書ではありません。")
+
+    today = date.today()
+    doc_number = get_next_doc_number(session, "receipt", today.year, today.month)
+    receipt = Issuance(
+        project_id=invoice.project_id,
+        project_member_id=invoice.project_member_id,
+        recipient_organization=invoice.recipient_organization,
+        recipient_name=invoice.recipient_name,
+        doc_type="receipt",
+        doc_number=doc_number,
+        status="支払済み",
+        amount=invoice.amount,
+        issued_at=datetime.now(),
+        staff_id=staff_id,
+        staff_name=staff_name,
+        delivery_method="窓口手渡し",
+    )
+    session.add(receipt)
+    session.flush()
+    for line in invoice.lines:
+        session.add(IssuanceLine(
+            issuance_id=receipt.id,
+            item_template_id=line.item_template_id,
+            item_name=line.item_name,
+            quantity=line.quantity,
+            unit=line.unit,
+            unit_price=line.unit_price,
+            tax_rate=line.tax_rate,
+            line_total=line.line_total,
+        ))
+
+    payment = Payment(
+        issuance_id=invoice.id,
+        payment_date=payment_date,
+        amount=invoice.amount,
+        payment_method=payment_method,
+        staff_id=staff_id,
+        staff_name=staff_name,
+        notes=notes,
+    )
+    session.add(payment)
+    invoice.status = "支払済み"
+    session.commit()
+    session.refresh(receipt)
+    return receipt
