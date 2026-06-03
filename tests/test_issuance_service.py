@@ -236,3 +236,33 @@ def test_issue_receipt_for_invoice_rejects_paid(db_session):
     with pytest.raises(ValueError):
         issue_receipt_for_invoice(db_session, invoice_id=invoice.id,
                                   payment_date=date(2026, 5, 30), staff_name="田中")
+
+
+def test_search_unpaid_invoices(db_session):
+    from app.services.issuance_service import (
+        create_issuance_for_member, mark_as_issued, record_payment,
+        search_unpaid_invoices,
+    )
+    from datetime import date
+    proj, tmpl, pm = _setup(db_session)
+
+    inv = create_issuance_for_member(
+        db_session, proj.id, pm.id,
+        recipient_organization=pm.organization_name,
+        recipient_name=pm.representative_name,
+        doc_type="invoice", fiscal_year=2026, month=5,
+    )
+    mark_as_issued(db_session, inv.id, None, "田中", "窓口手渡し")
+
+    # 発行済み・未入金なのでヒットする
+    hits = search_unpaid_invoices(db_session, "○○商事")
+    assert len(hits) == 1
+    assert hits[0].id == inv.id
+
+    # マッチしない検索語では出ない
+    assert search_unpaid_invoices(db_session, "存在しない名前") == []
+
+    # 支払済みになると一覧から外れる
+    record_payment(db_session, inv.id, payment_date=date(2026, 5, 30),
+                   amount=int(inv.amount), payment_method="現金", staff_name="田中")
+    assert search_unpaid_invoices(db_session, "○○商事") == []

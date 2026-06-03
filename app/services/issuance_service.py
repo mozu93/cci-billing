@@ -336,3 +336,31 @@ def issue_receipt_for_invoice(session: Session, invoice_id: int,
     session.commit()
     session.refresh(receipt)
     return receipt
+
+
+def search_unpaid_invoices(session: Session, query: str,
+                           limit: int = 50) -> list[Issuance]:
+    """検索語にマッチする、発行済み・未入金（status="発行済み"）の請求書を返す。
+
+    検索対象: 宛先事業所名・宛先代表者名・名簿会員のフリガナ。
+    """
+    q = (query or "").strip().lower()
+    if not q:
+        return []
+    invoices = (session.query(Issuance)
+                .filter(Issuance.doc_type == "invoice",
+                        Issuance.status == "発行済み")
+                .order_by(Issuance.issued_at.desc())
+                .all())
+    results = []
+    for iss in invoices:
+        parts = [iss.recipient_organization or "", iss.recipient_name or ""]
+        if iss.project_member_id:
+            pm = session.get(ProjectMember, iss.project_member_id)
+            if pm:
+                parts.append(pm.organization_kana or "")
+        if q in " ".join(parts).lower():
+            results.append(iss)
+            if len(results) >= limit:
+                break
+    return results
