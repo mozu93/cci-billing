@@ -150,6 +150,7 @@ class ProjectMember(Base):
     email = Column(String(200), default="")
     notes = Column(Text, default="")
     sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
 
 
 class Issuance(Base):

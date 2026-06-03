@@ -120,3 +120,14 @@ def test_get_project_progress(db_session):
     assert progress["issued"] == 0
     assert progress["paid"] == 0
     assert progress["pending"] == 2
+
+
+def test_roster_member_has_created_at(db_session):
+    """名簿エントリに登録日時(created_at)が自動で入る。"""
+    from app.services.project_service import create_project, add_roster_entries, get_project_members
+    from datetime import datetime
+    proj = create_project(db_session, name="2026 視察研修", category_id=None,
+                          fiscal_year=2026, project_type="list")
+    add_roster_entries(db_session, proj.id, [{"organization_name": "○○商事"}])
+    pm = get_project_members(db_session, proj.id)[0]
+    assert isinstance(pm.created_at, datetime)
