@@ -99,3 +99,50 @@ def test_payment_dialog_collect_only_mode(qtbot, memory_db):
     s = get_session()
     assert s.query(Payment).filter_by(issuance_id=inv_id).count() == 0
     s.close()
+
+
+def test_registered_issue_lists_unpaid_invoices(qtbot, memory_db):
+    """検索すると発行済み・未入金の請求書が一覧に出る。支払済みは出ない。"""
+    from app.database.connection import get_session
+    from app.services.category_service import create_category
+    from app.services.item_template_service import create_item_template
+    from app.services.project_service import (
+        create_project, add_template_to_project, add_roster_entries,
+        get_project_members,
+    )
+    from app.services.issuance_service import (
+        create_issuance_for_member, mark_as_issued, record_payment,
+    )
+    from app.ui.issuance_cross_member import IssuanceCrossMemberWidget
+    from datetime import date
+
+    s = get_session()
+    cat = create_category(s, "青年部")
+    tmpl = create_item_template(s, cat.id, "会費", 5000, "式", 0, "invoice", "")
+    proj = create_project(s, "2026 青年部会費", cat.id, 2026, "list")
+    add_template_to_project(s, proj.id, tmpl.id)
+    add_roster_entries(s, proj.id, [
+        {"organization_name": "○○商事"},
+        {"organization_name": "△△工業"},
+    ])
+    pms = get_project_members(s, proj.id)
+    inv1 = create_issuance_for_member(s, proj.id, pms[0].id, "○○商事", "",
+                                      "invoice", 2026, 5)
+    mark_as_issued(s, inv1.id, None, "田中", "窓口手渡し")
+    inv2 = create_issuance_for_member(s, proj.id, pms[1].id, "△△工業", "",
+                                      "invoice", 2026, 5)
+    mark_as_issued(s, inv2.id, None, "田中", "窓口手渡し")
+    # △△工業は支払済み → 一覧に出ない
+    record_payment(s, inv2.id, payment_date=date(2026, 5, 30),
+                   amount=int(inv2.amount), payment_method="現金", staff_name="田中")
+    s.close()
+
+    w = IssuanceCrossMemberWidget()
+    qtbot.addWidget(w)
+    w._search.setText("商事")
+    w._search_member()
+    assert w._result_table.rowCount() == 1
+
+    w._search.setText("△△工業")
+    w._search_member()
+    assert w._result_table.rowCount() == 0
