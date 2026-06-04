@@ -108,9 +108,19 @@ class IssuanceCrossMemberWidget(QWidget):
                 staff_id=current_user.get_id(),
                 staff_name=current_user.get_name(),
             )
+        except Exception as e:
+            session.close()
+            QMessageBox.critical(self, "エラー", str(e))
+            return
+        # ここまででDBは確定（入金記録・領収書登録・請求書を支払済み化）。
+        # PDF生成の失敗は領収書発行そのものを取り消さない。
+        try:
             pdf_path = generate_and_open(receipt, session)
         except Exception as e:
-            QMessageBox.critical(self, "エラー", str(e))
+            QMessageBox.warning(
+                self, "領収書を発行しました",
+                "入金を記録し領収書を登録しましたが、PDFの生成に失敗しました：\n"
+                f"{e}")
         else:
             if pdf_path is None:
                 QMessageBox.information(

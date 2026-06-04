@@ -131,6 +131,8 @@ class PaymentDialog(QDialog):
                 self._amount.setValue(int(iss.amount))
         finally:
             session.close()
+        if not self._auto_record:
+            self._amount.setReadOnly(True)
         self._method = QComboBox()
         self._method.addItems(["現金", "振込", "その他"])
         self._notes = QLineEdit()
