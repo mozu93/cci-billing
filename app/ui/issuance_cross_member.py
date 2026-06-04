@@ -12,6 +12,7 @@ from app.services.issuance_service import (
 from app.services.project_service import get_project_by_id
 from app.ui.payment_dialog import PaymentDialog
 from app.utils import current_user
+from app.utils.pdf_helpers import generate_and_open
 
 
 class IssuanceCrossMemberWidget(QWidget):
@@ -29,7 +30,7 @@ class IssuanceCrossMemberWidget(QWidget):
         search_row = QHBoxLayout()
         self._search = QLineEdit()
         self._search.setPlaceholderText("事業所名・フリガナ・代表者名")
-        self._timer = QTimer()
+        self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._search_member)
         self._search.textChanged.connect(lambda: self._timer.start(300))
@@ -99,7 +100,6 @@ class IssuanceCrossMemberWidget(QWidget):
         v = dlg.values()
         session = get_session()
         try:
-            from app.utils.pdf_helpers import generate_and_open
             receipt = issue_receipt_for_invoice(
                 session, invoice_id=invoice_id,
                 payment_date=v["payment_date"],
@@ -108,9 +108,15 @@ class IssuanceCrossMemberWidget(QWidget):
                 staff_id=current_user.get_id(),
                 staff_name=current_user.get_name(),
             )
-            generate_and_open(receipt, session)
+            pdf_path = generate_and_open(receipt, session)
         except Exception as e:
             QMessageBox.critical(self, "エラー", str(e))
+        else:
+            if pdf_path is None:
+                QMessageBox.information(
+                    self, "領収書を発行しました",
+                    "入金を記録し領収書を登録しましたが、自社情報が未登録のため"
+                    "PDFを生成できませんでした。設定で自社情報を登録してください。")
         finally:
             session.close()
         self._search_member()
