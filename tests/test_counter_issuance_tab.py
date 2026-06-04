@@ -91,6 +91,9 @@ def test_payment_dialog_collect_only_mode(qtbot, memory_db):
     qtbot.addWidget(dlg)
     v = dlg.values()
     assert set(v.keys()) == {"payment_date", "amount", "payment_method", "notes"}
+    from datetime import date as _date
+    assert isinstance(v["payment_date"], _date)
+    assert v["amount"] == 5000
 
     dlg._save()  # accept のみ。record_payment は呼ばれない
     s = get_session()
