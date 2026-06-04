@@ -37,8 +37,16 @@ class ProjectTab(QWidget):
         btn_add.clicked.connect(self._add)
         btn_edit = QPushButton("編集")
         btn_edit.clicked.connect(self._edit)
+        self._btn_close = QPushButton("完了")
+        self._btn_close.clicked.connect(self._close)
+        self._btn_reopen = QPushButton("完了を戻す")
+        self._btn_reopen.clicked.connect(self._reopen)
+        self._btn_close.setEnabled(False)
+        self._btn_reopen.setEnabled(False)
         top_row.addWidget(btn_add)
         top_row.addWidget(btn_edit)
+        top_row.addWidget(self._btn_close)
+        top_row.addWidget(self._btn_reopen)
         top_row.addStretch()
 
         self._status_combo = QComboBox()
@@ -69,16 +77,6 @@ class ProjectTab(QWidget):
         splitter.setSizes([300, 300])
         layout.addWidget(splitter)
 
-        btn_row2 = QHBoxLayout()
-        btn_close = QPushButton("完了")
-        btn_close.clicked.connect(self._close)
-        btn_reopen = QPushButton("完了を戻す")
-        btn_reopen.clicked.connect(self._reopen)
-        for b in [btn_close, btn_reopen]:
-            btn_row2.addWidget(b)
-        btn_row2.addStretch()
-        layout.addLayout(btn_row2)
-
     def _load(self):
         year = self._year_combo.currentData()
         status = self._status_combo.currentData()
@@ -104,14 +102,19 @@ class ProjectTab(QWidget):
 
     def _on_select(self, row, *_):
         if row < 0:
+            self._btn_close.setEnabled(False)
+            self._btn_reopen.setEnabled(False)
             return
         project_id = self._table.item(row, 0).data(Qt.ItemDataRole.UserRole)
         session = get_session()
         try:
             proj = get_project_by_id(session, project_id)
             project_type = proj.project_type if proj else "list"
+            status = proj.status if proj else None
         finally:
             session.close()
+        self._btn_close.setEnabled(status == "active")
+        self._btn_reopen.setEnabled(status == "closed")
         for i in reversed(range(self._member_panel_layout.count())):
             w = self._member_panel_layout.itemAt(i).widget()
             if w:

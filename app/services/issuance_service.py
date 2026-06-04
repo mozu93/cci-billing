@@ -270,3 +270,97 @@ def get_project_issuances(session: Session, project_id: int,
     if status:
         q = q.filter(Issuance.status == status)
     return q.order_by(Issuance.created_at.desc()).all()
+
+
+def issue_receipt_for_invoice(session: Session, invoice_id: int,
+                              payment_date: date,
+                              payment_method: str = "現金",
+                              notes: str = "",
+                              staff_id: int | None = None,
+                              staff_name: str = "",
+                              delivery_method: str = "窓口手渡し") -> Issuance:
+    """発行済み請求書から領収書を発行し、入金を記録して請求書を支払済みにする。
+
+    領収書は元請求書の明細・金額・宛名をそのまま引き継ぐ。
+    入金額は請求書の全額固定。全体を1トランザクションで実行する。
+    """
+    invoice = session.get(Issuance, invoice_id)
+    if invoice is None:
+        raise ValueError("請求書が見つかりません。")
+    if invoice.doc_type != "invoice":
+        raise ValueError("請求書ではありません。")
+    if invoice.status == "支払済み":
+        raise ValueError("既に支払済みの請求書です。")
+
+    now = datetime.now()
+    doc_number = get_next_doc_number(session, "receipt", now.year, now.month)
+    receipt = Issuance(
+        project_id=invoice.project_id,
+        project_member_id=invoice.project_member_id,
+        recipient_organization=invoice.recipient_organization,
+        recipient_name=invoice.recipient_name,
+        doc_type="receipt",
+        doc_number=doc_number,
+        status="支払済み",
+        amount=invoice.amount,
+        issued_at=now,
+        staff_id=staff_id,
+        staff_name=staff_name,
+        delivery_method=delivery_method,
+    )
+    session.add(receipt)
+    session.flush()
+    for line in invoice.lines:
+        session.add(IssuanceLine(
+            issuance_id=receipt.id,
+            item_template_id=line.item_template_id,
+            item_name=line.item_name,
+            quantity=line.quantity,
+            unit=line.unit,
+            unit_price=line.unit_price,
+            tax_rate=line.tax_rate,
+            line_total=line.line_total,
+        ))
+
+    payment = Payment(
+        issuance_id=invoice.id,
+        payment_date=payment_date,
+        amount=invoice.amount,
+        payment_method=payment_method,
+        staff_id=staff_id,
+        staff_name=staff_name,
+        notes=notes,
+    )
+    session.add(payment)
+    invoice.status = "支払済み"
+    session.commit()
+    session.refresh(receipt)
+    return receipt
+
+
+def search_unpaid_invoices(session: Session, query: str,
+                           limit: int = 50) -> list[Issuance]:
+    """検索語にマッチする、発行済み・未入金（status="発行済み"）の請求書を返す。
+
+    検索対象: 宛先事業所名・宛先代表者名・名簿会員のフリガナ。
+    """
+    q = (query or "").strip().lower()
+    if not q:
+        return []
+    invoices = (session.query(Issuance)
+                .filter(Issuance.doc_type == "invoice",
+                        Issuance.status == "発行済み")
+                .order_by(Issuance.issued_at.desc().nulls_last())
+                .all())
+    results = []
+    for iss in invoices:
+        parts = [iss.recipient_organization or "", iss.recipient_name or ""]
+        if iss.project_member_id:
+            pm = session.get(ProjectMember, iss.project_member_id)
+            if pm:
+                parts.append(pm.organization_kana or "")
+        if q in " ".join(parts).lower():
+            results.append(iss)
+            if len(results) >= limit:
+                break
+    return results

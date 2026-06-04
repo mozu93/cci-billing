@@ -172,3 +172,104 @@ def test_create_counter_issuance(db_session):
     assert issuance.status == "発行済み"
     assert int(issuance.lines[0].quantity) == 3
     assert int(issuance.amount) == 9000
+
+
+def test_issue_receipt_for_invoice(db_session):
+    from app.services.issuance_service import (
+        create_issuance_for_member, mark_as_issued, issue_receipt_for_invoice,
+    )
+    from app.database.models import Payment, Issuance
+    from datetime import date
+    proj, tmpl, pm = _setup(db_session)
+    invoice = create_issuance_for_member(
+        db_session, proj.id, pm.id,
+        recipient_organization=pm.organization_name,
+        recipient_name=pm.representative_name,
+        doc_type="invoice", fiscal_year=2026, month=5,
+    )
+    mark_as_issued(db_session, invoice.id, None, "田中", "窓口手渡し")
+
+    receipt = issue_receipt_for_invoice(
+        db_session, invoice_id=invoice.id,
+        payment_date=date(2026, 5, 30),
+        payment_method="現金", notes="窓口入金",
+        staff_id=None, staff_name="田中",
+    )
+
+    # 領収書は元請求書の明細・金額・宛名を引き継ぐ
+    assert receipt.doc_type == "receipt"
+    assert receipt.doc_number.startswith("RCP-")
+    assert receipt.status == "支払済み"
+    assert int(receipt.amount) == int(invoice.amount)
+    assert receipt.recipient_organization == invoice.recipient_organization
+    assert len(receipt.lines) == len(invoice.lines)
+    assert int(receipt.lines[0].unit_price) == int(invoice.lines[0].unit_price)
+    assert receipt.id != invoice.id
+
+    # 元請求書は支払済みになり、Payment が1件記録される
+    db_session.refresh(invoice)
+    assert invoice.status == "支払済み"
+    payments = db_session.query(Payment).filter_by(issuance_id=invoice.id).all()
+    assert len(payments) == 1
+    assert int(payments[0].amount) == int(invoice.amount)
+    assert payments[0].payment_method == "現金"
+    assert payments[0].notes == "窓口入金"
+
+
+def test_issue_receipt_for_invoice_rejects_paid(db_session):
+    import pytest
+    from app.services.issuance_service import (
+        create_issuance_for_member, mark_as_issued, issue_receipt_for_invoice,
+    )
+    from datetime import date
+    proj, tmpl, pm = _setup(db_session)
+    invoice = create_issuance_for_member(
+        db_session, proj.id, pm.id,
+        recipient_organization=pm.organization_name,
+        recipient_name=pm.representative_name,
+        doc_type="invoice", fiscal_year=2026, month=5,
+    )
+    mark_as_issued(db_session, invoice.id, None, "田中", "窓口手渡し")
+    issue_receipt_for_invoice(db_session, invoice_id=invoice.id,
+                              payment_date=date(2026, 5, 30), staff_name="田中")
+    # 2回目は拒否される
+    with pytest.raises(ValueError):
+        issue_receipt_for_invoice(db_session, invoice_id=invoice.id,
+                                  payment_date=date(2026, 5, 30), staff_name="田中")
+
+
+def test_search_unpaid_invoices(db_session):
+    from app.services.issuance_service import (
+        create_issuance_for_member, mark_as_issued, record_payment,
+        search_unpaid_invoices,
+    )
+    from datetime import date
+    proj, tmpl, pm = _setup(db_session)
+
+    inv = create_issuance_for_member(
+        db_session, proj.id, pm.id,
+        recipient_organization=pm.organization_name,
+        recipient_name=pm.representative_name,
+        doc_type="invoice", fiscal_year=2026, month=5,
+    )
+    mark_as_issued(db_session, inv.id, None, "田中", "窓口手渡し")
+
+    # 発行済み・未入金なのでヒットする
+    hits = search_unpaid_invoices(db_session, "○○商事")
+    assert len(hits) == 1
+    assert hits[0].id == inv.id
+
+    # マッチしない検索語では出ない
+    assert search_unpaid_invoices(db_session, "存在しない名前") == []
+
+    # フリガナでもヒットする
+    pm.organization_kana = "マルマルショウジ"
+    db_session.commit()
+    kana_hits = search_unpaid_invoices(db_session, "マルマルショウジ")
+    assert len(kana_hits) == 1
+    assert kana_hits[0].id == inv.id
+
+    # 支払済みになると一覧から外れる
+    record_payment(db_session, inv.id, payment_date=date(2026, 5, 30),
+                   amount=int(inv.amount), payment_method="現金", staff_name="田中")
+    assert search_unpaid_invoices(db_session, "○○商事") == []

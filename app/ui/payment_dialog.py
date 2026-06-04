@@ -99,12 +99,22 @@ class PaymentManagementWidget(QWidget):
 
 
 class PaymentDialog(QDialog):
-    def __init__(self, issuance_id: int, parent=None):
+    def __init__(self, issuance_id: int, parent=None, auto_record: bool = True):
         super().__init__(parent)
         self._issuance_id = issuance_id
+        self._auto_record = auto_record
         self.setWindowTitle("入金記録")
         self.setFixedSize(360, 260)
         self._build()
+
+    def values(self) -> dict:
+        qd = self._date.date()
+        return {
+            "payment_date": date(qd.year(), qd.month(), qd.day()),
+            "amount": self._amount.value(),
+            "payment_method": self._method.currentText(),
+            "notes": self._notes.text().strip(),
+        }
 
     def _build(self):
         layout = QVBoxLayout(self)
@@ -121,6 +131,8 @@ class PaymentDialog(QDialog):
                 self._amount.setValue(int(iss.amount))
         finally:
             session.close()
+        if not self._auto_record:
+            self._amount.setReadOnly(True)
         self._method = QComboBox()
         self._method.addItems(["現金", "振込", "その他"])
         self._notes = QLineEdit()
@@ -139,19 +151,21 @@ class PaymentDialog(QDialog):
         layout.addLayout(btn_row)
 
     def _save(self):
-        qd = self._date.date()
-        payment_date = date(qd.year(), qd.month(), qd.day())
+        if not self._auto_record:
+            self.accept()
+            return
+        v = self.values()
         session = get_session()
         try:
             record_payment(
                 session,
                 issuance_id=self._issuance_id,
-                payment_date=payment_date,
-                amount=self._amount.value(),
-                payment_method=self._method.currentText(),
+                payment_date=v["payment_date"],
+                amount=v["amount"],
+                payment_method=v["payment_method"],
                 staff_id=current_user.get_id(),
                 staff_name=current_user.get_name(),
-                notes=self._notes.text().strip()
+                notes=v["notes"],
             )
         finally:
             session.close()
