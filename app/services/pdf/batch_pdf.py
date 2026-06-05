@@ -27,6 +27,14 @@ def generate_batch_pdf(session, project_id: int, company: CompanySettings,
         if iss is None:
             if not pm.organization_name and not pm.representative_name:
                 continue
+            # 請求書発行時、領収書が既にある＝請求書は無効。スキップ
+            if doc_type == "invoice":
+                has_receipt = (session.query(Issuance)
+                               .filter_by(project_member_id=pm.id,
+                                          doc_type="receipt")
+                               .first() is not None)
+                if has_receipt:
+                    continue
             iss = create_issuance_for_member(
                 session, project_id=project_id,
                 project_member_id=pm.id,
