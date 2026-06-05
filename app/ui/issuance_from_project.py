@@ -232,7 +232,9 @@ class IssuanceFromProjectWidget(QWidget):
                 # 「未発行のみ」は選択中の書類種別を基準にする
                 sel = inv if doc_type == "invoice" else rcp
                 sel_status = sel.status if sel else "未発行"
-                if not show_all and sel_status in ("発行済み", "支払済み"):
+                hide_issued = sel_status in ("発行済み", "支払済み")
+                hide_voided = doc_type == "invoice" and voided
+                if not show_all and (hide_issued or hide_voided):
                     continue
                 if query:
                     targets = [
