@@ -20,7 +20,7 @@ def generate_batch_pdf(session, project_id: int, company: CompanySettings,
 
     for pm in pms:
         iss = (session.query(Issuance)
-               .filter_by(project_member_id=pm.id)
+               .filter_by(project_member_id=pm.id, doc_type=doc_type)
                .order_by(Issuance.created_at.desc())
                .first())
         is_new = False

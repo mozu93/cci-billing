@@ -15,8 +15,8 @@ from app.utils import current_user
 COL_CHK = 0
 COL_ORG = 1
 COL_REP = 2
-COL_STA = 3
-COL_NUM = 4
+COL_INV = 3
+COL_RCP = 4
 
 
 class _CheckableTable(QTableWidget):
@@ -94,7 +94,7 @@ class IssuanceFromProjectWidget(QWidget):
 
         self._table = _CheckableTable(0, 5)
         self._table.setHorizontalHeaderLabels(
-            ["", "事業所名", "代表者名", "ステータス", "発行番号"])
+            ["", "事業所名", "代表者名", "請求書", "領収書"])
 
         # 列0ヘッダーにチェックボックスを設定（クリックで全選択/全解除）
         hdr_item = QTableWidgetItem()
@@ -111,21 +111,31 @@ class IssuanceFromProjectWidget(QWidget):
         layout.addWidget(self._table)
 
         btn_row = QHBoxLayout()
-        btn_issue = QPushButton("選択した行を発行")
-        btn_issue.clicked.connect(self._issue_checked)
-        btn_issue_all = QPushButton("全員まとめて発行")
-        btn_issue_all.clicked.connect(self._issue_all)
+        self._btn_issue = QPushButton("選択行に請求書を発行")
+        self._btn_issue.clicked.connect(self._issue_checked)
+        self._btn_issue_all = QPushButton("全員に請求書を発行")
+        self._btn_issue_all.clicked.connect(self._issue_all)
         self._delivery_combo = QComboBox()
         self._delivery_combo.addItems(["窓口手渡し", "郵送", "メール送付", "その他"])
-        btn_row.addWidget(btn_issue)
-        btn_row.addWidget(btn_issue_all)
+        btn_row.addWidget(self._btn_issue)
+        btn_row.addWidget(self._btn_issue_all)
         btn_row.addWidget(QLabel("配付方法："))
         btn_row.addWidget(self._delivery_combo)
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
+        # 書類種別の変更でボタン文言を更新し、一覧も再読込する（ボタン生成後に接続）
+        self._doctype_combo.currentIndexChanged.connect(self._update_issue_button_labels)
+        self._doctype_combo.currentIndexChanged.connect(self._load_members)
+        self._update_issue_button_labels()
+
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
+
+    def _update_issue_button_labels(self):
+        label = self._doctype_combo.currentText()
+        self._btn_issue.setText(f"選択行に{label}を発行")
+        self._btn_issue_all.setText(f"全員に{label}を発行")
 
     # ── ヘッダークリック：全選択 / 全解除 ─────────────────────────
 
@@ -187,6 +197,14 @@ class IssuanceFromProjectWidget(QWidget):
 
     # ── メンバー一覧読み込み ──────────────────────────────────────
 
+    _STATUS_SHORT = {"発行済み": "発行済", "支払済み": "支払済", "準備中": "準備中"}
+
+    def _cell_text(self, iss) -> str:
+        if iss is None:
+            return "未発行"
+        short = self._STATUS_SHORT.get(iss.status, iss.status)
+        return f"{short} {iss.doc_number}".strip()
+
     def _load_members(self):
         project_id = self._proj_combo.currentData()
         if project_id is None:
@@ -194,20 +212,25 @@ class IssuanceFromProjectWidget(QWidget):
             return
         query = self._search.text().strip().lower()
         show_all = self._filter_combo.currentIndex() == 1
+        doc_type = self._doctype_combo.currentData()
         session = get_session()
         try:
             pms = get_project_members(session, project_id)
             from app.database.models import Issuance
             pm_data = []
             for pm in pms:
-                iss = (session.query(Issuance)
-                       .filter_by(project_member_id=pm.id)
+                inv = (session.query(Issuance)
+                       .filter_by(project_member_id=pm.id, doc_type="invoice")
                        .order_by(Issuance.created_at.desc())
                        .first())
-                status = iss.status if iss else "未準備"
-                doc_number = iss.doc_number if iss else ""
-                issuance_id = iss.id if iss else None
-                if not show_all and status in ("発行済み", "支払済み"):
+                rcp = (session.query(Issuance)
+                       .filter_by(project_member_id=pm.id, doc_type="receipt")
+                       .order_by(Issuance.created_at.desc())
+                       .first())
+                # 「未発行のみ」は選択中の書類種別を基準にする
+                sel = inv if doc_type == "invoice" else rcp
+                sel_status = sel.status if sel else "未発行"
+                if not show_all and sel_status in ("発行済み", "支払済み"):
                     continue
                 if query:
                     targets = [
@@ -217,7 +240,11 @@ class IssuanceFromProjectWidget(QWidget):
                     ]
                     if not any(query in t.lower() for t in targets):
                         continue
-                pm_data.append((pm.id, pm, status, doc_number, issuance_id))
+                pm_data.append((
+                    pm.id, pm,
+                    self._cell_text(inv), self._cell_text(rcp),
+                    inv.id if inv else None, rcp.id if rcp else None,
+                ))
         finally:
             session.close()
 
@@ -228,7 +255,7 @@ class IssuanceFromProjectWidget(QWidget):
             hdr.setCheckState(Qt.CheckState.Unchecked)
 
         self._table.setRowCount(0)
-        for pm_id, pm, status, doc_number, issuance_id in pm_data:
+        for pm_id, pm, inv_text, rcp_text, inv_id, rcp_id in pm_data:
             row = self._table.rowCount()
             self._table.insertRow(row)
 
@@ -237,20 +264,22 @@ class IssuanceFromProjectWidget(QWidget):
             chk_item.setCheckState(Qt.CheckState.Unchecked)
             self._table.setItem(row, COL_CHK, chk_item)
 
-            for col_offset, val in enumerate([
-                pm.organization_name or "",
-                pm.representative_name or "",
-                status, doc_number
-            ]):
+            row_data = (pm_id, inv_id, rcp_id)
+            for col, val in [
+                (COL_ORG, pm.organization_name or ""),
+                (COL_REP, pm.representative_name or ""),
+                (COL_INV, inv_text),
+                (COL_RCP, rcp_text),
+            ]:
                 item = QTableWidgetItem(val)
-                item.setData(Qt.ItemDataRole.UserRole, (pm_id, issuance_id))
-                self._table.setItem(row, col_offset + 1, item)
+                item.setData(Qt.ItemDataRole.UserRole, row_data)
+                self._table.setItem(row, col, item)
 
         self._status_label.setText(f"{len(pm_data)} 件表示")
 
     # ── チェック済み行の取得 ──────────────────────────────────────
 
-    def _checked_rows(self) -> list[tuple[int, int | None]]:
+    def _checked_rows(self) -> list[tuple[int, int | None, int | None]]:
         result = []
         for r in range(self._table.rowCount()):
             chk = self._table.item(r, COL_CHK)
@@ -286,7 +315,8 @@ class IssuanceFromProjectWidget(QWidget):
         try:
             from app.database.models import ProjectMember, Issuance
             from app.utils.pdf_helpers import generate_and_open
-            for pm_id, issuance_id in targets:
+            for pm_id, invoice_id, receipt_id in targets:
+                issuance_id = invoice_id if doc_type == "invoice" else receipt_id
                 try:
                     pm = session.get(ProjectMember, pm_id)
                     if issuance_id is None:
