@@ -126,3 +126,28 @@ def test_two_columns_show_invoice_and_receipt_status(qtbot, memory_db):
     assert "INV-" in rows["△△工業"][0]
     assert "発行済" in rows["△△工業"][1]
     assert "RCP-" in rows["△△工業"][1]
+
+
+def test_unissued_filter_is_per_doctype(qtbot, memory_db):
+    from app.ui.issuance_from_project import IssuanceFromProjectWidget
+    proj_id = _seed_two_members_with_issuances()
+    # ○○商事=請求書発行済み/領収書未発行、△△工業=両方発行済み
+    w = IssuanceFromProjectWidget()
+    qtbot.addWidget(w)
+    _select_project(w, proj_id)
+
+    # 書類種別=請求書、未発行のみ → 両者とも請求書発行済みなので0件
+    idx_inv = next(i for i in range(w._doctype_combo.count())
+                   if w._doctype_combo.itemData(i) == "invoice")
+    w._filter_combo.setCurrentIndex(0)  # 未発行のみ
+    w._doctype_combo.setCurrentIndex(idx_inv)
+    w._load_members()
+    assert w._table.rowCount() == 0
+
+    # 書類種別=領収書に切替 → 切替だけで再読込され、領収書未発行の○○商事が出る
+    idx_rcp = next(i for i in range(w._doctype_combo.count())
+                   if w._doctype_combo.itemData(i) == "receipt")
+    w._doctype_combo.setCurrentIndex(idx_rcp)  # currentIndexChanged で再読込
+    orgs = [w._table.item(r, 1).text() for r in range(w._table.rowCount())]
+    assert "○○商事" in orgs       # 領収書未発行
+    assert "△△工業" not in orgs   # 領収書発行済み

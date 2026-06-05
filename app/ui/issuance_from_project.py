@@ -124,8 +124,9 @@ class IssuanceFromProjectWidget(QWidget):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        # 書類種別の変更でボタン文言を更新（ボタン生成後に接続）
+        # 書類種別の変更でボタン文言を更新し、一覧も再読込する（ボタン生成後に接続）
         self._doctype_combo.currentIndexChanged.connect(self._update_issue_button_labels)
+        self._doctype_combo.currentIndexChanged.connect(self._load_members)
         self._update_issue_button_labels()
 
         self._status_label = QLabel("")
