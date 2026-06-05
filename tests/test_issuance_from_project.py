@@ -238,3 +238,51 @@ def test_unissued_filter_hides_voided_invoice(qtbot, memory_db):
     orgs = [w._table.item(r, COL_ORG).text() for r in range(w._table.rowCount())]
     assert "○○商事" not in orgs   # 無効は対応不要なので出ない
     assert "××物産" in orgs       # 純粋な未発行は出る
+
+
+def test_issue_checked_skips_voided_invoice(qtbot, memory_db):
+    from app.database.connection import get_session
+    from app.services.category_service import create_category
+    from app.services.item_template_service import create_item_template
+    from app.services.project_service import (
+        create_project, add_template_to_project, add_roster_entries,
+        get_project_members,
+    )
+    from app.services.issuance_service import create_issuance_for_member, mark_as_issued
+    from app.ui.issuance_from_project import IssuanceFromProjectWidget, COL_CHK
+    from app.database.models import Issuance
+    from PyQt6.QtCore import Qt
+    s = get_session()
+    cat = create_category(s, "青年部")
+    tmpl = create_item_template(s, cat.id, "会費", 5000, "式", 0, "invoice", "")
+    proj = create_project(s, "2026 青年部会費", cat.id, 2026, "list")
+    add_template_to_project(s, proj.id, tmpl.id)
+    add_roster_entries(s, proj.id, [{"organization_name": "○○商事"}])
+    pm = get_project_members(s, proj.id)[0]
+    rcp = create_issuance_for_member(s, proj.id, pm.id, "○○商事", "",
+                                     "receipt", 2026, 5)
+    mark_as_issued(s, rcp.id, None, "田中", "窓口手渡し")
+    proj_id, pm_id = proj.id, pm.id
+    s.close()
+
+    w = IssuanceFromProjectWidget()
+    qtbot.addWidget(w)
+    _select_project(w, proj_id)
+    # 書類種別=請求書、すべて表示で○○商事（無効）を出す
+    idx_inv = next(i for i in range(w._doctype_combo.count())
+                   if w._doctype_combo.itemData(i) == "invoice")
+    w._doctype_combo.setCurrentIndex(idx_inv)
+    w._filter_combo.setCurrentIndex(1)  # すべて
+    w._load_members()
+    assert w._table.rowCount() == 1
+    # 行をチェックして請求書を発行
+    w._table.item(0, COL_CHK).setCheckState(Qt.CheckState.Checked)
+    w._issue_checked()
+
+    # 無効なので請求書は作られない
+    s = get_session()
+    cnt = (s.query(Issuance)
+           .filter_by(project_member_id=pm_id, doc_type="invoice")
+           .count())
+    s.close()
+    assert cnt == 0

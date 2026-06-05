@@ -321,6 +321,9 @@ class IssuanceFromProjectWidget(QWidget):
             from app.database.models import ProjectMember, Issuance
             from app.utils.pdf_helpers import generate_and_open
             for pm_id, invoice_id, receipt_id in targets:
+                # 領収書発行済みで請求書未発行＝無効。請求書は発行しない
+                if doc_type == "invoice" and invoice_id is None and receipt_id is not None:
+                    continue
                 issuance_id = invoice_id if doc_type == "invoice" else receipt_id
                 try:
                     pm = session.get(ProjectMember, pm_id)
