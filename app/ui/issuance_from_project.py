@@ -111,21 +111,30 @@ class IssuanceFromProjectWidget(QWidget):
         layout.addWidget(self._table)
 
         btn_row = QHBoxLayout()
-        btn_issue = QPushButton("選択した行を発行")
-        btn_issue.clicked.connect(self._issue_checked)
-        btn_issue_all = QPushButton("全員まとめて発行")
-        btn_issue_all.clicked.connect(self._issue_all)
+        self._btn_issue = QPushButton("選択行に請求書を発行")
+        self._btn_issue.clicked.connect(self._issue_checked)
+        self._btn_issue_all = QPushButton("全員に請求書を発行")
+        self._btn_issue_all.clicked.connect(self._issue_all)
         self._delivery_combo = QComboBox()
         self._delivery_combo.addItems(["窓口手渡し", "郵送", "メール送付", "その他"])
-        btn_row.addWidget(btn_issue)
-        btn_row.addWidget(btn_issue_all)
+        btn_row.addWidget(self._btn_issue)
+        btn_row.addWidget(self._btn_issue_all)
         btn_row.addWidget(QLabel("配付方法："))
         btn_row.addWidget(self._delivery_combo)
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
+        # 書類種別の変更でボタン文言を更新（ボタン生成後に接続）
+        self._doctype_combo.currentIndexChanged.connect(self._update_issue_button_labels)
+        self._update_issue_button_labels()
+
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
+
+    def _update_issue_button_labels(self):
+        label = self._doctype_combo.currentText()
+        self._btn_issue.setText(f"選択行に{label}を発行")
+        self._btn_issue_all.setText(f"全員に{label}を発行")
 
     # ── ヘッダークリック：全選択 / 全解除 ─────────────────────────
 

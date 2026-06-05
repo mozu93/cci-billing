@@ -21,8 +21,9 @@ def test_widget_has_issue_and_batch_buttons(qtbot, memory_db):
     w = IssuanceFromProjectWidget()
     qtbot.addWidget(w)
     texts = _texts(w)
-    assert "選択した行を発行" in texts
-    assert "全員まとめて発行" in texts
+    # 初期は請求書。種別が文言に含まれる
+    assert "選択行に請求書を発行" in texts
+    assert "全員に請求書を発行" in texts
     # 旧2段階ボタンが無い
     assert "準備（採番）" not in texts
 
@@ -40,3 +41,19 @@ def test_widget_has_doctype_combo(qtbot, memory_db):
         if "invoice" in datas and "receipt" in datas:
             found = True
     assert found
+
+
+def test_issue_button_labels_follow_doctype(qtbot, memory_db):
+    from app.ui.issuance_from_project import IssuanceFromProjectWidget
+    w = IssuanceFromProjectWidget()
+    qtbot.addWidget(w)
+    idx_inv = next(i for i in range(w._doctype_combo.count())
+                   if w._doctype_combo.itemData(i) == "invoice")
+    w._doctype_combo.setCurrentIndex(idx_inv)
+    assert w._btn_issue.text() == "選択行に請求書を発行"
+    assert w._btn_issue_all.text() == "全員に請求書を発行"
+    idx_rcp = next(i for i in range(w._doctype_combo.count())
+                   if w._doctype_combo.itemData(i) == "receipt")
+    w._doctype_combo.setCurrentIndex(idx_rcp)
+    assert w._btn_issue.text() == "選択行に領収書を発行"
+    assert w._btn_issue_all.text() == "全員に領収書を発行"
