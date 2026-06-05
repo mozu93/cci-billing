@@ -7,8 +7,10 @@ from app.services.project_service import (
     create_project, add_template_to_project, add_roster_entries,
     get_project_members,
 )
-from app.database.models import CompanySettings
-from app.services.issuance_service import get_project_issuances
+from app.database.models import CompanySettings, Issuance
+from app.services.issuance_service import (
+    create_issuance_for_member, mark_as_issued, get_project_issuances,
+)
 
 
 def _setup_receipt_project(db_session):
@@ -95,3 +97,48 @@ def test_batch_pdf_invoice_generates_files(db_session, tmp_path):
 
     assert len(paths) == 1
     assert os.path.exists(paths[0])
+
+
+def test_batch_pdf_invoice_not_reuse_existing_receipt(db_session, tmp_path):
+    """既存の領収書がある会員に対して doc_type="invoice" を指定すると、
+    領収書を流用せず新規に請求書 issuance が作成される（doc_type フィルタ不具合の再現）。"""
+    from app.services.pdf.batch_pdf import generate_batch_pdf
+
+    # --- セットアップ: 請求書テンプレートを持つプロジェクトに会員1名 ---
+    cat = create_category(db_session, "本部")
+    tmpl = create_item_template(
+        db_session, cat.id, "年会費", 8000, "式", 0, "invoice", ""
+    )
+    proj = create_project(db_session, "2026年度 年会費", cat.id, 2026, "list")
+    add_template_to_project(db_session, proj.id, tmpl.id)
+    add_roster_entries(db_session, proj.id, [
+        {"organization_name": "○○工業株式会社", "representative_name": "山田 花子"},
+    ])
+    pm = get_project_members(db_session, proj.id)[0]
+
+    # --- 前提条件: この会員にすでに領収書 issuance が存在する ---
+    receipt_iss = create_issuance_for_member(
+        db_session, proj.id, pm.id,
+        recipient_organization=pm.organization_name,
+        recipient_name=pm.representative_name,
+        doc_type="receipt", fiscal_year=2026, month=4,
+    )
+    mark_as_issued(db_session, receipt_iss.id, staff_id=None, staff_name="")
+
+    # --- バグ再現: doc_type="invoice" で一括生成 ---
+    company = _make_company()
+    generate_batch_pdf(
+        db_session, proj.id, company, str(tmp_path),
+        doc_type="invoice"
+    )
+
+    # --- アサーション: 請求書 issuance が新規作成されていること ---
+    invoice_count = (
+        db_session.query(Issuance)
+        .filter_by(project_member_id=pm.id, doc_type="invoice")
+        .count()
+    )
+    assert invoice_count == 1, (
+        f"Expected 1 invoice issuance, got {invoice_count}. "
+        "The receipt may have been reused due to missing doc_type filter."
+    )
