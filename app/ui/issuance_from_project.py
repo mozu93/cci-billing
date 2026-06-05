@@ -227,6 +227,8 @@ class IssuanceFromProjectWidget(QWidget):
                        .filter_by(project_member_id=pm.id, doc_type="receipt")
                        .order_by(Issuance.created_at.desc())
                        .first())
+                # 請求書未発行かつ領収書発行済み → 請求書は「無効」
+                voided = inv is None and rcp is not None
                 # 「未発行のみ」は選択中の書類種別を基準にする
                 sel = inv if doc_type == "invoice" else rcp
                 sel_status = sel.status if sel else "未発行"
@@ -240,9 +242,10 @@ class IssuanceFromProjectWidget(QWidget):
                     ]
                     if not any(query in t.lower() for t in targets):
                         continue
+                inv_text = "無効" if voided else self._cell_text(inv)
                 pm_data.append((
                     pm.id, pm,
-                    self._cell_text(inv), self._cell_text(rcp),
+                    inv_text, self._cell_text(rcp),
                     inv.id if inv else None, rcp.id if rcp else None,
                 ))
         finally:

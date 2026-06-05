@@ -151,3 +151,49 @@ def test_unissued_filter_is_per_doctype(qtbot, memory_db):
     orgs = [w._table.item(r, 1).text() for r in range(w._table.rowCount())]
     assert "○○商事" in orgs       # 領収書未発行
     assert "△△工業" not in orgs   # 領収書発行済み
+
+
+def test_invoice_column_shows_voided_when_only_receipt(qtbot, memory_db):
+    from app.database.connection import get_session
+    from app.services.category_service import create_category
+    from app.services.item_template_service import create_item_template
+    from app.services.project_service import (
+        create_project, add_template_to_project, add_roster_entries,
+        get_project_members,
+    )
+    from app.services.issuance_service import create_issuance_for_member, mark_as_issued
+    from app.ui.issuance_from_project import (
+        IssuanceFromProjectWidget, COL_ORG, COL_INV,
+    )
+    s = get_session()
+    cat = create_category(s, "青年部")
+    tmpl = create_item_template(s, cat.id, "会費", 5000, "式", 0, "invoice", "")
+    proj = create_project(s, "2026 青年部会費", cat.id, 2026, "list")
+    add_template_to_project(s, proj.id, tmpl.id)
+    add_roster_entries(s, proj.id, [
+        {"organization_name": "○○商事"},
+        {"organization_name": "△△工業"},
+    ])
+    pms = get_project_members(s, proj.id)
+    # ○○商事：領収書のみ発行（請求書なし）→ 無効
+    rcp = create_issuance_for_member(s, proj.id, pms[0].id, "○○商事", "",
+                                     "receipt", 2026, 5)
+    mark_as_issued(s, rcp.id, None, "田中", "窓口手渡し")
+    # △△工業：請求書発行済み
+    inv = create_issuance_for_member(s, proj.id, pms[1].id, "△△工業", "",
+                                     "invoice", 2026, 5)
+    mark_as_issued(s, inv.id, None, "田中", "窓口手渡し")
+    proj_id = proj.id
+    s.close()
+
+    w = IssuanceFromProjectWidget()
+    qtbot.addWidget(w)
+    _select_project(w, proj_id)
+    w._filter_combo.setCurrentIndex(1)  # すべて
+    w._load_members()
+
+    rows = {}
+    for r in range(w._table.rowCount()):
+        rows[w._table.item(r, COL_ORG).text()] = w._table.item(r, COL_INV).text()
+    assert rows["○○商事"] == "無効"          # 領収書のみ → 請求書は無効
+    assert "発行済" in rows["△△工業"]        # 請求書発行済みは従来どおり
