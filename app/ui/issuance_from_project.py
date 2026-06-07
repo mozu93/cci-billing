@@ -10,6 +10,7 @@ from app.database.connection import get_session
 from app.services.project_service import (
     get_projects, get_project_members, get_project_templates
 )
+from app.services.category_service import get_active_categories
 from app.services.issuance_service import create_issuance_for_member, mark_as_issued
 from app.utils import current_user
 
@@ -85,6 +86,7 @@ class IssuanceFromProjectWidget(QWidget):
         self._sort_col: int = COL_ORG
         self._sort_asc: bool = True
         self._qty_cache: dict[int, dict[int, int]] = {}  # {pm_id: {tmpl_id: qty}}
+        self._all_projects: list = []
         self._build()
         self._load_projects()
 
@@ -100,9 +102,19 @@ class IssuanceFromProjectWidget(QWidget):
         layout = QVBoxLayout(self)
 
         top = QHBoxLayout()
+        top.addWidget(QLabel("年度："))
+        self._year_combo = QComboBox()
+        self._year_combo.setMinimumWidth(95)
+        self._year_combo.currentIndexChanged.connect(self._filter_projects)
+        top.addWidget(self._year_combo)
+        top.addWidget(QLabel("業務区分："))
+        self._cat_combo = QComboBox()
+        self._cat_combo.setMinimumWidth(120)
+        self._cat_combo.currentIndexChanged.connect(self._filter_projects)
+        top.addWidget(self._cat_combo)
         top.addWidget(QLabel("件名："))
         self._proj_combo = QComboBox()
-        self._proj_combo.setMinimumWidth(300)
+        self._proj_combo.setMinimumWidth(240)
         self._proj_combo.currentIndexChanged.connect(self._on_project_changed)
         top.addWidget(self._proj_combo)
         top.addWidget(QLabel("表示："))
@@ -124,20 +136,7 @@ class IssuanceFromProjectWidget(QWidget):
         search_row.addWidget(self._search)
         layout.addLayout(search_row)
 
-        self._table = _CheckableTable(0, 7)
-        hdr_item = QTableWidgetItem()
-        hdr_item.setCheckState(Qt.CheckState.Unchecked)
-        self._table.setHorizontalHeaderItem(COL_CHK, hdr_item)
-        self._table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
-        self._table.horizontalHeader().setSortIndicatorShown(True)
-        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self._table.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self._setup_table_columns()
-        layout.addWidget(self._table)
-
+        # ── ボタン行（テーブルの上） ──────────────────────────────────
         label = "請求書" if self._doc_type == "invoice" else "領収書"
         btn_row = QHBoxLayout()
         self._btn_issue = QPushButton(f"選択行に{label}を発行")
@@ -152,6 +151,20 @@ class IssuanceFromProjectWidget(QWidget):
         btn_row.addWidget(self._delivery_combo)
         btn_row.addStretch()
         layout.addLayout(btn_row)
+
+        self._table = _CheckableTable(0, 7)
+        hdr_item = QTableWidgetItem()
+        hdr_item.setCheckState(Qt.CheckState.Unchecked)
+        self._table.setHorizontalHeaderItem(COL_CHK, hdr_item)
+        self._table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
+        self._table.horizontalHeader().setSortIndicatorShown(True)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._table.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._setup_table_columns()
+        layout.addWidget(self._table)
 
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
@@ -174,8 +187,8 @@ class IssuanceFromProjectWidget(QWidget):
         hdr.setSectionResizeMode(COL_KANA, interactive); self._table.setColumnWidth(COL_KANA,140)
         hdr.setSectionResizeMode(COL_REP,  interactive); self._table.setColumnWidth(COL_REP, 100)
         for col in range(5, 5 + n):
-            hdr.setSectionResizeMode(col, fixed)
-            self._table.setColumnWidth(col, 90)
+            hdr.setSectionResizeMode(col, interactive)
+            self._table.setColumnWidth(col, 120)
         for col in (self._col_inv, self._col_rcp):
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
 
@@ -222,19 +235,62 @@ class IssuanceFromProjectWidget(QWidget):
     def _load_projects(self):
         session = get_session()
         try:
-            projects = get_projects(session, status="active")
+            self._all_projects = get_projects(session, status="active")
+            cats = get_active_categories(session)
         finally:
             session.close()
+
+        # 年度コンボ（重複なし降順）
+        years = sorted({p.fiscal_year for p in self._all_projects}, reverse=True)
+        current_year = self._year_combo.currentData()
+        self._year_combo.blockSignals(True)
+        self._year_combo.clear()
+        self._year_combo.addItem("すべて", None)
+        for y in years:
+            self._year_combo.addItem(f"{y}年度", y)
+        # デフォルト：最新年度
+        if years and current_year is None:
+            self._year_combo.setCurrentIndex(1)
+        else:
+            for i in range(self._year_combo.count()):
+                if self._year_combo.itemData(i) == current_year:
+                    self._year_combo.setCurrentIndex(i)
+                    break
+        self._year_combo.blockSignals(False)
+
+        # 業務区分コンボ：_all_projects に含まれるカテゴリのみ表示（窓口除外済み）
+        used_cat_ids = {p.category_id for p in self._all_projects}
+        current_cat = self._cat_combo.currentData()
+        self._cat_combo.blockSignals(True)
+        self._cat_combo.clear()
+        self._cat_combo.addItem("すべて", None)
+        for c in cats:
+            if c.id in used_cat_ids:
+                self._cat_combo.addItem(c.name, c.id)
+        for i in range(self._cat_combo.count()):
+            if self._cat_combo.itemData(i) == current_cat:
+                self._cat_combo.setCurrentIndex(i)
+                break
+        self._cat_combo.blockSignals(False)
+
+        self._filter_projects()
+
+    def _filter_projects(self):
+        sel_year = self._year_combo.currentData()
+        sel_cat  = self._cat_combo.currentData()
         current_id = self._proj_combo.currentData()
         self._proj_combo.blockSignals(True)
         self._proj_combo.clear()
-        for p in projects:
+        for p in self._all_projects:
+            if sel_year is not None and p.fiscal_year != sel_year:
+                continue
+            if sel_cat is not None and p.category_id != sel_cat:
+                continue
             self._proj_combo.addItem(p.name, p.id)
-        if current_id is not None:
-            for i in range(self._proj_combo.count()):
-                if self._proj_combo.itemData(i) == current_id:
-                    self._proj_combo.setCurrentIndex(i)
-                    break
+        for i in range(self._proj_combo.count()):
+            if self._proj_combo.itemData(i) == current_id:
+                self._proj_combo.setCurrentIndex(i)
+                break
         self._proj_combo.blockSignals(False)
         self._on_project_changed()
 
@@ -450,9 +506,19 @@ class IssuanceFromProjectWidget(QWidget):
                 except Exception as e:
                     errors.append(str(e))
 
+            due_date = None
+            if doc_type == "invoice" and issued_issuances:
+                from app.ui.invoice_options_dialog import InvoiceOptionsDialog
+                from PyQt6.QtWidgets import QDialog
+                ref_iss = issued_issuances[0][0]
+                opts = InvoiceOptionsDialog(issued_at=ref_iss.issued_at, parent=self)
+                if opts.exec() != QDialog.DialogCode.Accepted:
+                    return errors
+                due_date = opts.due_date()
+
             for iss, sess in issued_issuances:
                 try:
-                    generate_and_open(iss, sess)
+                    generate_and_open(iss, sess, due_date=due_date)
                 except Exception as e:
                     errors.append(str(e))
         finally:

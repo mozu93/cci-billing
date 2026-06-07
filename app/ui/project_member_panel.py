@@ -3,9 +3,26 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QHeaderView, QMessageBox, QDialog,
     QFormLayout, QLineEdit, QComboBox,
-    QDialogButtonBox
+    QDialogButtonBox, QStyledItemDelegate
 )
 from PyQt6.QtCore import Qt
+
+
+class _CompactDelegate(QStyledItemDelegate):
+    """インライン編集エディタのジオメトリをセル矩形に固定する。"""
+
+    def createEditor(self, parent, option, index):
+        editor = super().createEditor(parent, option, index)
+        if editor is not None:
+            # グローバルスタイルの min-height を無効化してセル高に収める
+            editor.setStyleSheet(
+                "QLineEdit { min-height: 0; padding: 1px 6px; "
+                "border: 1.5px solid #3B82F6; border-radius: 3px; }"
+            )
+        return editor
+
+    def updateEditorGeometry(self, editor, option, index):
+        editor.setGeometry(option.rect)
 from app.database.connection import get_session
 from app.database.models import ProjectMember
 from app.services.project_service import (
@@ -175,7 +192,11 @@ class ProjectMemberPanel(QWidget):
             Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._table.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        vhdr = self._table.verticalHeader()
+        vhdr.setDefaultSectionSize(26)
+        vhdr.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         self._table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked)
+        self._table.setItemDelegate(_CompactDelegate(self._table))
         self._table.setSortingEnabled(True)
         self._table.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self._table)

@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QComboBox, QLabel, QHeaderView, QDialog, QSplitter
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 from app.database.connection import get_session
 from app.services.project_service import (
     get_projects, close_project, reopen_project,
@@ -41,12 +42,15 @@ class ProjectTab(QWidget):
         self._btn_close.clicked.connect(self._close)
         self._btn_reopen = QPushButton("完了を戻す")
         self._btn_reopen.clicked.connect(self._reopen)
+        btn_rollover = QPushButton("年度更新")
+        btn_rollover.clicked.connect(self._rollover)
         self._btn_close.setEnabled(False)
         self._btn_reopen.setEnabled(False)
         top_row.addWidget(btn_add)
         top_row.addWidget(btn_edit)
         top_row.addWidget(self._btn_close)
         top_row.addWidget(self._btn_reopen)
+        top_row.addWidget(btn_rollover)
         top_row.addStretch()
 
         self._status_combo = QComboBox()
@@ -90,13 +94,16 @@ class ProjectTab(QWidget):
                 p = get_project_progress(session, proj.id)
                 row = self._table.rowCount()
                 self._table.insertRow(row)
+                pending = p["pending"]
                 for col, val in enumerate([
                     cat_name.get(proj.category_id, ""), proj.name,
                     str(p["total"]), str(p["invoice_issued"]),
-                    str(p["receipt_issued"]), str(p["pending"])
+                    str(p["receipt_issued"]), str(pending)
                 ]):
                     item = QTableWidgetItem(val)
                     item.setData(Qt.ItemDataRole.UserRole, proj.id)
+                    if col == 5 and pending > 0:
+                        item.setForeground(QColor("#DC2626"))
                     self._table.setItem(row, col, item)
         finally:
             session.close()
@@ -164,3 +171,9 @@ class ProjectTab(QWidget):
         finally:
             session.close()
         self._load()
+
+    def _rollover(self):
+        from app.ui.fiscal_year_dialog import FiscalYearDialog
+        dlg = FiscalYearDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._load()

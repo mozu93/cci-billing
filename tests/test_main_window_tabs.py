@@ -14,7 +14,7 @@ def test_top_level_tabs_order(qtbot, memory_db):
     assert isinstance(tabs, QTabWidget)
     assert _tab_titles(tabs) == [
         "窓口発行", "まとめて発行", "再発行",
-        "ダッシュボード", "レポート", "設定",
+        "レポート", "設定",
     ]
 
 

@@ -24,9 +24,6 @@ class MainWindow(QMainWindow):
         from app.ui.reissue_tab import ReissueWidget
         tabs.addTab(ReissueWidget(), "再発行")
 
-        from app.ui.dashboard import DashboardWidget
-        tabs.addTab(DashboardWidget(), "ダッシュボード")
-
         from app.ui.report_tab import ReportTab
         tabs.addTab(ReportTab(), "レポート")
 

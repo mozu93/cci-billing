@@ -46,7 +46,7 @@ _a4_queue: list[int] = []
 
 
 def generate_and_open(issuance, session, receipt_fmt: str = "a5",
-                      reissue: bool = False) -> str | None:
+                      reissue: bool = False, due_date=None) -> str | None:
     """
     receipt_fmt: "a5" → A5縦1事業所（原本+控え）
                  "a4" → A4横2事業所キュー方式
@@ -57,12 +57,41 @@ def generate_and_open(issuance, session, receipt_fmt: str = "a5",
     seal = get_default_seal(session, company)
     output_dir = get_pdf_output_dir()
 
+    from app.utils.app_config import get_config
+    _cfg = get_config()
+    _window_envelope = _cfg.get("window_envelope", False)
+
     suffix = "_再発行" if reissue else ""
     if issuance.doc_type == "invoice":
         path = os.path.join(output_dir, f"{issuance.doc_number}{suffix}.pdf")
         from app.services.pdf.invoice_pdf import generate_invoice_pdf
+        postal_code = address = address2 = ""
+        if _window_envelope and issuance.project_member_id:
+            from app.database.models import ProjectMember
+            pm = session.get(ProjectMember, issuance.project_member_id)
+            if pm:
+                postal_code = pm.postal_code or ""
+                address = pm.address or ""
+                address2 = pm.address2 or ""
+        subject = ""
+        due_date = None
+        proj_notes = ""
+        if issuance.project_id:
+            from app.database.models import Project
+            proj = session.get(Project, issuance.project_id)
+            if proj:
+                subject = proj.name or ""
+                due_date = proj.due_date
+                proj_notes = proj.notes or ""
         generate_invoice_pdf(issuance, company, path, bank,
-                             seal_image=seal, reissue=reissue)
+                             seal_image=seal, reissue=reissue,
+                             window_envelope=_window_envelope,
+                             recipient_postal_code=postal_code,
+                             recipient_address=address,
+                             recipient_address2=address2,
+                             subject=subject,
+                             due_date=due_date,  # None → invoice_pdf側で翌月末自動設定
+                             notes=proj_notes)
         issuance.pdf_path = path
         session.commit()
         from app.services.print_service import open_pdf

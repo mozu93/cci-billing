@@ -444,7 +444,14 @@ class IssuanceCounterWidget(QWidget):
                 project_name           = project_name,
             )
             from app.utils.pdf_helpers import generate_and_open
-            generate_and_open(iss, session, receipt_fmt=fmt)
+            due_date = None
+            if doc_type == "invoice":
+                from app.ui.invoice_options_dialog import InvoiceOptionsDialog
+                opts = InvoiceOptionsDialog(issued_at=iss.issued_at, parent=self)
+                if opts.exec() != QDialog.DialogCode.Accepted:
+                    return
+                due_date = opts.due_date()
+            generate_and_open(iss, session, receipt_fmt=fmt, due_date=due_date)
         except Exception as e:
             QMessageBox.critical(self, "発行エラー", str(e))
             return
