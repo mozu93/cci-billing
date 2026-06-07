@@ -7,23 +7,34 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from app.database.connection import get_session
+from app.database.models import ProjectMember
 from app.services.project_service import (
     get_project_members, add_roster_entries, remove_member_from_project,
     copy_roster_from_project, get_projects
 )
+
+# 列インデックス → フィールド名（None は編集不可列）
+_COL_FIELDS = [
+    "member_number", "organization_name", "organization_kana",
+    "representative_name", "representative_kana", "department",
+    "postal_code", "address", "address2", "phone", "email",
+    None,  # 登録日
+]
 
 
 class RosterEntryDialog(QDialog):
     """名簿の1エントリ入力ダイアログ"""
 
     FIELDS = [
+        ("member_number",        "会員番号"),
         ("organization_name",    "事業所名"),
         ("organization_kana",    "フリガナ（事業所）"),
         ("representative_name",  "代表者名"),
         ("representative_kana",  "代表者フリガナ"),
         ("department",           "所属・役職名"),
         ("postal_code",          "郵便番号"),
-        ("address",              "住所"),
+        ("address",              "住所１"),
+        ("address2",             "住所２"),
         ("phone",                "電話"),
         ("email",                "メール"),
     ]
@@ -140,14 +151,33 @@ class ProjectMemberPanel(QWidget):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        self._table = QTableWidget(0, 5)
-        self._table.setHorizontalHeaderLabels(
-            ["事業所名", "代表者名", "メール", "電話", "登録日"])
-        self._table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch)
-        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        COLS = [
+            ("会員番号",       80),
+            ("事業所名",      180),
+            ("フリガナ",      160),
+            ("代表者名",      100),
+            ("代表者フリガナ",130),
+            ("所属・役職名",  120),
+            ("郵便番号",       80),
+            ("住所１",        200),
+            ("住所２",        140),
+            ("電話",          110),
+            ("メール",        180),
+            ("登録日",         90),
+        ]
+        self._table = QTableWidget(0, len(COLS))
+        self._table.setHorizontalHeaderLabels([c[0] for c in COLS])
+        hdr = self._table.horizontalHeader()
+        for i, (_, w) in enumerate(COLS):
+            hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+            self._table.setColumnWidth(i, w)
+        self._table.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._table.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked)
         self._table.setSortingEnabled(True)
-        self._table.doubleClicked.connect(self._edit_entry)
+        self._table.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self._table)
         self._count_label = QLabel("")
         layout.addWidget(self._count_label)
@@ -158,6 +188,7 @@ class ProjectMemberPanel(QWidget):
             pms = get_project_members(session, self._project_id, newest_first=True)
         finally:
             session.close()
+        self._table.blockSignals(True)
         self._table.setSortingEnabled(False)
         self._table.setRowCount(0)
         for pm in pms:
@@ -165,18 +196,45 @@ class ProjectMemberPanel(QWidget):
             self._table.insertRow(row)
             reg = pm.created_at.strftime("%Y/%m/%d") if pm.created_at else ""
             vals = [
+                pm.member_number or "",
                 pm.organization_name or "",
+                pm.organization_kana or "",
                 pm.representative_name or "",
-                pm.email or "",
+                pm.representative_kana or "",
+                pm.department or "",
+                pm.postal_code or "",
+                pm.address or "",
+                pm.address2 or "",
                 pm.phone or "",
+                pm.email or "",
                 reg,
             ]
             for col, val in enumerate(vals):
                 item = QTableWidgetItem(val)
                 item.setData(Qt.ItemDataRole.UserRole, pm.id)
+                if _COL_FIELDS[col] is None:
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._table.setItem(row, col, item)
         self._table.setSortingEnabled(True)
+        self._table.blockSignals(False)
         self._count_label.setText(f"{len(pms)} 件")
+
+    def _on_item_changed(self, item: QTableWidgetItem):
+        col = item.column()
+        field = _COL_FIELDS[col] if col < len(_COL_FIELDS) else None
+        if field is None:
+            return
+        pm_id = item.data(Qt.ItemDataRole.UserRole)
+        if pm_id is None:
+            return
+        session = get_session()
+        try:
+            pm = session.get(ProjectMember, pm_id)
+            if pm:
+                setattr(pm, field, item.text().strip())
+                session.commit()
+        finally:
+            session.close()
 
     def _add_entry(self):
         dlg = RosterEntryDialog(self)
@@ -195,11 +253,11 @@ class ProjectMemberPanel(QWidget):
         pm_id = self._table.item(row, 0).data(Qt.ItemDataRole.UserRole)
         session = get_session()
         try:
-            from app.database.models import ProjectMember
             pm = session.get(ProjectMember, pm_id)
             if pm is None:
                 return
             initial = {
+                "member_number": pm.member_number,
                 "organization_name": pm.organization_name,
                 "organization_kana": pm.organization_kana,
                 "representative_name": pm.representative_name,
@@ -207,6 +265,7 @@ class ProjectMemberPanel(QWidget):
                 "department": pm.department,
                 "postal_code": pm.postal_code,
                 "address": pm.address,
+                "address2": pm.address2,
                 "phone": pm.phone,
                 "email": pm.email,
             }

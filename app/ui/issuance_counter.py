@@ -109,8 +109,9 @@ class _LineRow(QFrame):
 
 
 class IssuanceCounterWidget(QWidget):
-    def __init__(self):
+    def __init__(self, doc_type: str = "receipt"):
         super().__init__()
+        self._doc_type_str = doc_type
         self._categories = []
         self._templates  = []
         self._cat_name_by_id: dict[int, str] = {}
@@ -194,14 +195,11 @@ class IssuanceCounterWidget(QWidget):
         opts_form = QFormLayout(grp_opts)
         opts_form.setContentsMargins(10, 8, 10, 8)
         opts_form.setSpacing(8)
-        self._doc_type = QComboBox()
-        self._doc_type.addItem("領収書", "receipt")
-        self._doc_type.addItem("請求書", "invoice")
         self._delivery = QComboBox()
         self._delivery.addItems(["窓口手渡し", "郵送", "メール送付", "その他"])
-        opts_form.addRow("書類種別", self._doc_type)
         opts_form.addRow("配付方法", self._delivery)
-        fmt_note = QLabel("印刷形式：領収書 = A5縦　請求書 = A4（固定）")
+        fmt_text = "A4縦" if self._doc_type_str == "invoice" else "A5縦"
+        fmt_note = QLabel(f"印刷形式：{fmt_text}（固定）")
         fmt_note.setStyleSheet("color: #666; font-size: 11px;")
         opts_form.addRow("", fmt_note)
         top_row.addWidget(grp_opts, 4)
@@ -427,7 +425,7 @@ class IssuanceCounterWidget(QWidget):
 
         project_name = self._derive_project_name()
 
-        doc_type = self._doc_type.currentData()
+        doc_type = self._doc_type_str
         fmt      = "a4" if doc_type == "invoice" else "a5"
         today    = date.today()
         session  = get_session()

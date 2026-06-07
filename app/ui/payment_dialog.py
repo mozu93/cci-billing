@@ -13,6 +13,17 @@ from app.services.project_service import get_projects
 from app.utils import current_user
 
 
+_PAY_COLS = [
+    ("発行番号", 120),
+    ("会員番号",  90),
+    ("宛先",     200),
+    ("フリガナ", 160),
+    ("金額",      90),
+    ("状態",      80),
+    ("発行日",    90),
+]
+
+
 class PaymentManagementWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -37,12 +48,19 @@ class PaymentManagementWidget(QWidget):
         top.addStretch()
         layout.addLayout(top)
 
-        self._table = QTableWidget(0, 5)
-        self._table.setHorizontalHeaderLabels(
-            ["発行番号", "宛先", "金額", "状態", "発行日"])
-        self._table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch)
+        self._table = QTableWidget(0, len(_PAY_COLS))
+        self._table.setHorizontalHeaderLabels([c[0] for c in _PAY_COLS])
+        hdr = self._table.horizontalHeader()
+        hdr.setSortIndicatorShown(True)
+        for i, (_, w) in enumerate(_PAY_COLS):
+            hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+            self._table.setColumnWidth(i, w)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._table.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._table.setSortingEnabled(True)
         layout.addWidget(self._table)
 
         btn_row = QHBoxLayout()
@@ -72,21 +90,31 @@ class PaymentManagementWidget(QWidget):
         session = get_session()
         try:
             issuances = get_project_issuances(session, project_id, status)
+            from app.database.models import ProjectMember
+            self._table.setSortingEnabled(False)
+            self._table.setRowCount(0)
+            for iss in issuances:
+                row = self._table.rowCount()
+                self._table.insertRow(row)
+                recipient = iss.recipient_organization or iss.recipient_name or ""
+                issued = iss.issued_at.strftime("%Y/%m/%d") if iss.issued_at else ""
+                member_number = ""
+                org_kana = ""
+                if iss.project_member_id:
+                    pm = session.get(ProjectMember, iss.project_member_id)
+                    if pm:
+                        member_number = pm.member_number or ""
+                        org_kana = pm.organization_kana or ""
+                for col, val in enumerate([
+                    iss.doc_number, member_number, recipient, org_kana,
+                    f"¥{int(iss.amount):,}", iss.status, issued,
+                ]):
+                    item = QTableWidgetItem(val)
+                    item.setData(Qt.ItemDataRole.UserRole, iss.id)
+                    self._table.setItem(row, col, item)
         finally:
             session.close()
-        self._table.setRowCount(0)
-        for iss in issuances:
-            row = self._table.rowCount()
-            self._table.insertRow(row)
-            recipient = iss.recipient_organization or iss.recipient_name
-            issued = iss.issued_at.strftime("%Y/%m/%d") if iss.issued_at else ""
-            for col, val in enumerate([
-                iss.doc_number, recipient,
-                f"¥{int(iss.amount):,}", iss.status, issued
-            ]):
-                item = QTableWidgetItem(val)
-                item.setData(Qt.ItemDataRole.UserRole, iss.id)
-                self._table.setItem(row, col, item)
+        self._table.setSortingEnabled(True)
 
     def _mark_paid(self):
         row = self._table.currentRow()

@@ -16,47 +16,35 @@ def test_widget_uses_kenmei_label(qtbot, memory_db):
     assert "名簿：" not in labels
 
 
-def test_widget_has_issue_and_batch_buttons(qtbot, memory_db):
+def test_invoice_widget_has_correct_buttons(qtbot, memory_db):
     from app.ui.issuance_from_project import IssuanceFromProjectWidget
-    w = IssuanceFromProjectWidget()
+    w = IssuanceFromProjectWidget("invoice")
     qtbot.addWidget(w)
     texts = _texts(w)
-    # 初期は請求書。種別が文言に含まれる
     assert "選択行に請求書を発行" in texts
     assert "全員に請求書を発行" in texts
-    # 旧2段階ボタンが無い
     assert "準備（採番）" not in texts
 
 
-def test_widget_has_doctype_combo(qtbot, memory_db):
+def test_receipt_widget_has_correct_buttons(qtbot, memory_db):
     from app.ui.issuance_from_project import IssuanceFromProjectWidget
-    from PyQt6.QtCore import Qt
+    w = IssuanceFromProjectWidget("receipt")
+    qtbot.addWidget(w)
+    texts = _texts(w)
+    assert "選択行に領収書を発行" in texts
+    assert "全員に領収書を発行" in texts
+
+
+def test_widget_has_no_doctype_combo(qtbot, memory_db):
+    """書類種別コンボは廃止され、タブで切り替える設計になっている。"""
+    from app.ui.issuance_from_project import IssuanceFromProjectWidget
     w = IssuanceFromProjectWidget()
     qtbot.addWidget(w)
     combos = w.findChildren(QComboBox)
-    # いずれかのコンボに invoice/receipt のデータが入っている
-    found = False
     for c in combos:
         datas = [c.itemData(i) for i in range(c.count())]
-        if "invoice" in datas and "receipt" in datas:
-            found = True
-    assert found
-
-
-def test_issue_button_labels_follow_doctype(qtbot, memory_db):
-    from app.ui.issuance_from_project import IssuanceFromProjectWidget
-    w = IssuanceFromProjectWidget()
-    qtbot.addWidget(w)
-    idx_inv = next(i for i in range(w._doctype_combo.count())
-                   if w._doctype_combo.itemData(i) == "invoice")
-    w._doctype_combo.setCurrentIndex(idx_inv)
-    assert w._btn_issue.text() == "選択行に請求書を発行"
-    assert w._btn_issue_all.text() == "全員に請求書を発行"
-    idx_rcp = next(i for i in range(w._doctype_combo.count())
-                   if w._doctype_combo.itemData(i) == "receipt")
-    w._doctype_combo.setCurrentIndex(idx_rcp)
-    assert w._btn_issue.text() == "選択行に領収書を発行"
-    assert w._btn_issue_all.text() == "全員に領収書を発行"
+        assert "invoice" not in datas or "receipt" not in datas, \
+            "書類種別コンボが残っている"
 
 
 def _seed_two_members_with_issuances():
@@ -101,11 +89,9 @@ def _select_project(w, proj_id):
 
 
 def test_two_columns_show_invoice_and_receipt_status(qtbot, memory_db):
-    from app.ui.issuance_from_project import (
-        IssuanceFromProjectWidget, COL_ORG, COL_INV, COL_RCP,
-    )
+    from app.ui.issuance_from_project import IssuanceFromProjectWidget, COL_ORG
     proj_id = _seed_two_members_with_issuances()
-    w = IssuanceFromProjectWidget()
+    w = IssuanceFromProjectWidget("invoice")
     qtbot.addWidget(w)
     _select_project(w, proj_id)
     w._filter_combo.setCurrentIndex(1)  # すべて
@@ -115,8 +101,8 @@ def test_two_columns_show_invoice_and_receipt_status(qtbot, memory_db):
     rows = {}
     for r in range(w._table.rowCount()):
         org = w._table.item(r, COL_ORG).text()
-        rows[org] = (w._table.item(r, COL_INV).text(),
-                     w._table.item(r, COL_RCP).text())
+        rows[org] = (w._table.item(r, w._col_inv).text(),
+                     w._table.item(r, w._col_rcp).text())
     # ○○商事：請求書発行済み・領収書未発行
     assert "発行済" in rows["○○商事"][0]
     assert "INV-" in rows["○○商事"][0]
@@ -128,27 +114,30 @@ def test_two_columns_show_invoice_and_receipt_status(qtbot, memory_db):
     assert "RCP-" in rows["△△工業"][1]
 
 
-def test_unissued_filter_is_per_doctype(qtbot, memory_db):
+def test_unissued_filter_per_doctype_invoice(qtbot, memory_db):
+    """請求書タブの未発行フィルタ：請求書発行済みは非表示。"""
     from app.ui.issuance_from_project import IssuanceFromProjectWidget
     proj_id = _seed_two_members_with_issuances()
-    # ○○商事=請求書発行済み/領収書未発行、△△工業=両方発行済み
-    w = IssuanceFromProjectWidget()
+    w = IssuanceFromProjectWidget("invoice")
     qtbot.addWidget(w)
     _select_project(w, proj_id)
-
-    # 書類種別=請求書、未発行のみ → 両者とも請求書発行済みなので0件
-    idx_inv = next(i for i in range(w._doctype_combo.count())
-                   if w._doctype_combo.itemData(i) == "invoice")
     w._filter_combo.setCurrentIndex(0)  # 未発行のみ
-    w._doctype_combo.setCurrentIndex(idx_inv)
     w._load_members()
+    # 両者とも請求書発行済みなので0件
     assert w._table.rowCount() == 0
 
-    # 書類種別=領収書に切替 → 切替だけで再読込され、領収書未発行の○○商事が出る
-    idx_rcp = next(i for i in range(w._doctype_combo.count())
-                   if w._doctype_combo.itemData(i) == "receipt")
-    w._doctype_combo.setCurrentIndex(idx_rcp)  # currentIndexChanged で再読込
-    orgs = [w._table.item(r, 1).text() for r in range(w._table.rowCount())]
+
+def test_unissued_filter_per_doctype_receipt(qtbot, memory_db):
+    """領収書タブの未発行フィルタ：領収書未発行の事業所のみ表示。"""
+    from app.ui.issuance_from_project import IssuanceFromProjectWidget, COL_ORG
+    proj_id = _seed_two_members_with_issuances()
+    # ○○商事=請求書のみ発行済み/領収書未発行、△△工業=両方発行済み
+    w = IssuanceFromProjectWidget("receipt")
+    qtbot.addWidget(w)
+    _select_project(w, proj_id)
+    w._filter_combo.setCurrentIndex(0)  # 未発行のみ
+    w._load_members()
+    orgs = [w._table.item(r, COL_ORG).text() for r in range(w._table.rowCount())]
     assert "○○商事" in orgs       # 領収書未発行
     assert "△△工業" not in orgs   # 領収書発行済み
 
@@ -162,9 +151,7 @@ def test_invoice_column_shows_voided_when_only_receipt(qtbot, memory_db):
         get_project_members,
     )
     from app.services.issuance_service import create_issuance_for_member, mark_as_issued
-    from app.ui.issuance_from_project import (
-        IssuanceFromProjectWidget, COL_ORG, COL_INV,
-    )
+    from app.ui.issuance_from_project import IssuanceFromProjectWidget, COL_ORG
     s = get_session()
     cat = create_category(s, "青年部")
     tmpl = create_item_template(s, cat.id, "会費", 5000, "式", 0, "invoice", "")
@@ -186,7 +173,7 @@ def test_invoice_column_shows_voided_when_only_receipt(qtbot, memory_db):
     proj_id = proj.id
     s.close()
 
-    w = IssuanceFromProjectWidget()
+    w = IssuanceFromProjectWidget("invoice")
     qtbot.addWidget(w)
     _select_project(w, proj_id)
     w._filter_combo.setCurrentIndex(1)  # すべて
@@ -194,7 +181,7 @@ def test_invoice_column_shows_voided_when_only_receipt(qtbot, memory_db):
 
     rows = {}
     for r in range(w._table.rowCount()):
-        rows[w._table.item(r, COL_ORG).text()] = w._table.item(r, COL_INV).text()
+        rows[w._table.item(r, COL_ORG).text()] = w._table.item(r, w._col_inv).text()
     assert rows["○○商事"] == "無効"          # 領収書のみ → 請求書は無効
     assert "発行済" in rows["△△工業"]        # 請求書発行済みは従来どおり
 
@@ -225,14 +212,10 @@ def test_unissued_filter_hides_voided_invoice(qtbot, memory_db):
     proj_id = proj.id
     s.close()
 
-    w = IssuanceFromProjectWidget()
+    w = IssuanceFromProjectWidget("invoice")
     qtbot.addWidget(w)
     _select_project(w, proj_id)
-    # 書類種別=請求書、未発行のみ
-    idx_inv = next(i for i in range(w._doctype_combo.count())
-                   if w._doctype_combo.itemData(i) == "invoice")
     w._filter_combo.setCurrentIndex(0)  # 未発行のみ
-    w._doctype_combo.setCurrentIndex(idx_inv)
     w._load_members()
 
     orgs = [w._table.item(r, COL_ORG).text() for r in range(w._table.rowCount())]
@@ -265,14 +248,10 @@ def test_issue_checked_skips_voided_invoice(qtbot, memory_db):
     proj_id, pm_id = proj.id, pm.id
     s.close()
 
-    w = IssuanceFromProjectWidget()
+    w = IssuanceFromProjectWidget("invoice")
     qtbot.addWidget(w)
     _select_project(w, proj_id)
-    # 書類種別=請求書、すべて表示で○○商事（無効）を出す
-    idx_inv = next(i for i in range(w._doctype_combo.count())
-                   if w._doctype_combo.itemData(i) == "invoice")
-    w._doctype_combo.setCurrentIndex(idx_inv)
-    w._filter_combo.setCurrentIndex(1)  # すべて
+    w._filter_combo.setCurrentIndex(1)  # すべて表示で○○商事（無効）を出す
     w._load_members()
     assert w._table.rowCount() == 1
     # 行をチェックして請求書を発行

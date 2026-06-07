@@ -42,7 +42,7 @@ class DashboardWidget(QWidget):
         layout.addWidget(QLabel("■ 受付中の名簿"))
         self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(
-            ["名簿名", "全件", "発行済", "支払済", "未発行"])
+            ["名簿名", "全件", "請求書発行済", "領収書発行済", "未発行"])
         self._table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -63,8 +63,8 @@ class DashboardWidget(QWidget):
                 pending = p["pending"]
                 for col, val in enumerate([
                     proj.name,
-                    str(p["total"]), str(p["issued"]),
-                    str(p["paid"]), str(pending)
+                    str(p["total"]), str(p["invoice_issued"]),
+                    str(p["receipt_issued"]), str(pending)
                 ]):
                     item = QTableWidgetItem(val)
                     item.setData(Qt.ItemDataRole.UserRole, proj.id)

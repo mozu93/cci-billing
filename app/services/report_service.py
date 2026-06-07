@@ -79,15 +79,15 @@ def get_project_summary(session: Session,
                            session.query(Issuance).filter_by(
                                project_id=proj.id, status="支払済み").all())
         rows.append({
-            "fiscal_year":  proj.fiscal_year,
-            "project_name": proj.name,
-            "project_type": "名簿あり" if proj.project_type == "list" else "その場入力",
-            "total":        p["total"],
-            "issued":       p["issued"],
-            "paid":         p["paid"],
-            "pending":      p["pending"],
-            "total_amount": total_amount,
-            "paid_amount":  paid_amount,
+            "fiscal_year":    proj.fiscal_year,
+            "project_name":   proj.name,
+            "project_type":   "名簿あり" if proj.project_type == "list" else "その場入力",
+            "total":          p["total"],
+            "invoice_issued": p["invoice_issued"],
+            "receipt_issued": p["receipt_issued"],
+            "pending":        p["pending"],
+            "total_amount":   total_amount,
+            "paid_amount":    paid_amount,
         })
     return rows
 

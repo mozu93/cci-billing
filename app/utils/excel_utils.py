@@ -10,11 +10,12 @@ MEMBER_COLUMNS = [
     "department",
     "postal_code",
     "address",
+    "address2",
     "phone",
     "email",
 ]
 
-ROSTER_COLUMNS = [c for c in MEMBER_COLUMNS if c != "member_number"]
+ROSTER_COLUMNS = MEMBER_COLUMNS
 
 # 取り込み先フィールド → 日本語ラベル（MEMBER_COLUMNS と同順）
 FIELD_LABELS = {
@@ -25,7 +26,8 @@ FIELD_LABELS = {
     "representative_kana": "代表者フリガナ",
     "department": "所属・役職名",
     "postal_code": "郵便番号",
-    "address": "住所",
+    "address": "住所１",
+    "address2": "住所２",
     "phone": "電話",
     "email": "メール",
 }

@@ -12,7 +12,22 @@ def test_counter_issuance_subtabs(qtbot, memory_db):
     qtbot.addWidget(w)
     inner = w.findChild(QTabWidget)
     assert inner is not None
-    assert _tab_titles(inner) == ["フリー発行", "登録済発行"]
+    assert _tab_titles(inner) == ["請求書発行", "領収書発行"]
+
+
+def test_counter_receipt_tab_has_subtabs(qtbot, memory_db):
+    """領収書発行タブの中にフリー発行・登録済発行のサブタブがある。"""
+    from app.ui.counter_issuance_tab import CounterIssuanceTab
+    w = CounterIssuanceTab()
+    qtbot.addWidget(w)
+    tabs = w.findChildren(QTabWidget)
+    # 外側タブ + 内側タブの2つが存在する
+    assert len(tabs) >= 2
+    inner_titles = []
+    for t in tabs:
+        inner_titles.extend(_tab_titles(t))
+    assert "フリー発行" in inner_titles
+    assert "登録済発行" in inner_titles
 
 
 def _seed_duplicate_named_templates():

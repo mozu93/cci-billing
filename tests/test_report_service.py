@@ -76,5 +76,6 @@ def test_get_project_summary(db_session):
     assert len(summary) == 1
     row = summary[0]
     assert row["total"] == 2
-    assert row["paid"] == 1
+    assert row["invoice_issued"] == 1   # iss1 のみ発行済み（iss2 は準備中）
+    assert row["receipt_issued"] == 0
     assert row["pending"] == 1

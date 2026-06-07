@@ -28,6 +28,14 @@ def _migrate(engine):
             conn.execute(text(
                 "ALTER TABLE project_members ADD COLUMN created_at DATETIME"))
             conn.commit()
+        if "member_number" not in pm_cols:
+            conn.execute(text(
+                "ALTER TABLE project_members ADD COLUMN member_number VARCHAR(50) DEFAULT ''"))
+            conn.commit()
+        if "address2" not in pm_cols:
+            conn.execute(text(
+                "ALTER TABLE project_members ADD COLUMN address2 VARCHAR(300) DEFAULT ''"))
+            conn.commit()
 
 
 def init_db(url: str | None = None):

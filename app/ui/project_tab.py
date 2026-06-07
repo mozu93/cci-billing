@@ -63,7 +63,7 @@ class ProjectTab(QWidget):
 
         self._table = QTableWidget(0, 6)
         self._table.setHorizontalHeaderLabels(
-            ["業務名", "件名", "状態", "全件", "発行済", "未発行"])
+            ["業務名", "件名", "全件", "請求書発行済", "領収書発行済", "未発行"])
         self._table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -91,8 +91,9 @@ class ProjectTab(QWidget):
                 row = self._table.rowCount()
                 self._table.insertRow(row)
                 for col, val in enumerate([
-                    cat_name.get(proj.category_id, ""), proj.name, proj.status,
-                    str(p["total"]), str(p["issued"]), str(p["pending"])
+                    cat_name.get(proj.category_id, ""), proj.name,
+                    str(p["total"]), str(p["invoice_issued"]),
+                    str(p["receipt_issued"]), str(p["pending"])
                 ]):
                     item = QTableWidgetItem(val)
                     item.setData(Qt.ItemDataRole.UserRole, proj.id)

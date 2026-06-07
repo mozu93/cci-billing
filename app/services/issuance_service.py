@@ -23,7 +23,13 @@ def get_next_doc_number(session: Session, doc_type: str,
 
 
 def _build_lines_from_project(session: Session, project_id: int,
-                               quantity: int = 1) -> tuple[list[dict], int]:
+                               quantities: dict[int, int] | None = None,
+                               default_quantity: int = 1) -> tuple[list[dict], int]:
+    """プロジェクトテンプレートから発行明細を生成する。
+
+    quantities: {item_template_id: 数量} — 品目ごとに数量を指定する場合。
+                None または未指定のキーは default_quantity を使う。
+    """
     pts = (session.query(ProjectTemplate)
            .filter_by(project_id=project_id)
            .order_by(ProjectTemplate.sort_order)
@@ -33,12 +39,13 @@ def _build_lines_from_project(session: Session, project_id: int,
     for pt in pts:
         tmpl = pt.item_template
         price = int(pt.unit_price_override or tmpl.unit_price)
-        line_total = price * quantity
+        qty = (quantities or {}).get(tmpl.id, default_quantity)
+        line_total = price * qty
         total += line_total
         lines.append({
             "item_template_id": tmpl.id,
             "item_name": tmpl.name,
-            "quantity": quantity,
+            "quantity": qty,
             "unit": tmpl.unit,
             "unit_price": price,
             "tax_rate": tmpl.tax_rate,
@@ -52,9 +59,10 @@ def create_issuance_for_member(session: Session, project_id: int,
                                 recipient_organization: str,
                                 recipient_name: str,
                                 doc_type: str, fiscal_year: int,
-                                month: int) -> Issuance:
+                                month: int,
+                                quantities: dict[int, int] | None = None) -> Issuance:
     doc_number = get_next_doc_number(session, doc_type, fiscal_year, month)
-    lines, total = _build_lines_from_project(session, project_id)
+    lines, total = _build_lines_from_project(session, project_id, quantities=quantities)
 
     issuance = Issuance(
         project_id=project_id,
@@ -81,7 +89,7 @@ def create_counter_issuance(session: Session, project_id: int,
                              doc_type: str, quantity: int,
                              fiscal_year: int, month: int) -> Issuance:
     doc_number = get_next_doc_number(session, doc_type, fiscal_year, month)
-    lines, total = _build_lines_from_project(session, project_id, quantity)
+    lines, total = _build_lines_from_project(session, project_id, default_quantity=quantity)
     now = datetime.now()
     issuance = Issuance(
         project_id=project_id,

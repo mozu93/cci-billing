@@ -39,3 +39,17 @@ def test_project_tab_shows_business_and_title_columns(qtbot, memory_db):
     for r in range(w._table.rowCount()):
         cells.append((w._table.item(r, 0).text(), w._table.item(r, 1).text()))
     assert ("不動産部会", "2026 視察研修会参加費") in cells
+
+
+def test_project_tab_column_headers(qtbot, memory_db):
+    """状態列が廃止され、請求書発行済・領収書発行済・未発行の列になっている。"""
+    from app.ui.project_tab import ProjectTab
+    w = ProjectTab()
+    qtbot.addWidget(w)
+    headers = [w._table.horizontalHeaderItem(i).text()
+               for i in range(w._table.columnCount())]
+    assert "状態" not in headers
+    assert "発行済" not in headers
+    assert "請求書発行済" in headers
+    assert "領収書発行済" in headers
+    assert "未発行" in headers

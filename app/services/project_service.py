@@ -86,6 +86,7 @@ def add_roster_entries(session: Session, project_id: int,
     for i, e in enumerate(entries):
         pm = ProjectMember(
             project_id=project_id,
+            member_number=e.get("member_number", ""),
             organization_name=e.get("organization_name", ""),
             organization_kana=e.get("organization_kana", ""),
             representative_name=e.get("representative_name", ""),
@@ -93,6 +94,7 @@ def add_roster_entries(session: Session, project_id: int,
             department=e.get("department", ""),
             postal_code=e.get("postal_code", ""),
             address=e.get("address", ""),
+            address2=e.get("address2", ""),
             phone=e.get("phone", ""),
             email=e.get("email", ""),
             notes=e.get("notes", ""),
@@ -108,6 +110,7 @@ def copy_roster_from_project(session: Session, src_project_id: int,
                              dst_project_id: int) -> list[ProjectMember]:
     src = get_project_members(session, src_project_id)
     entries = [{
+        "member_number": p.member_number,
         "organization_name": p.organization_name,
         "organization_kana": p.organization_kana,
         "representative_name": p.representative_name,
@@ -115,6 +118,7 @@ def copy_roster_from_project(session: Session, src_project_id: int,
         "department": p.department,
         "postal_code": p.postal_code,
         "address": p.address,
+        "address2": p.address2,
         "phone": p.phone,
         "email": p.email,
         "notes": p.notes,
@@ -143,22 +147,26 @@ def get_project_progress(session: Session, project_id: int) -> dict:
     pm_ids = [pm.id for pm in members]
     if not pm_ids:
         # 会員名簿を持たない（窓口/フリー発行など）プロジェクトは発行単位で集計
-        statuses = [row[0] for row in
-                    session.query(Issuance.status)
-                    .filter(Issuance.project_id == project_id).all()]
-        total = len(statuses)
-        issued = sum(1 for s in statuses if s in ("発行済み", "支払済み"))
-        paid = sum(1 for s in statuses if s == "支払済み")
+        rows = session.query(Issuance.doc_type, Issuance.status)\
+            .filter(Issuance.project_id == project_id).all()
+        total = len(rows)
+        invoice_issued = sum(1 for dt, s in rows
+                             if dt == "invoice" and s in ("発行済み", "支払済み"))
+        receipt_issued = sum(1 for dt, s in rows
+                             if dt == "receipt" and s in ("発行済み", "支払済み"))
+        issued = sum(1 for _, s in rows if s in ("発行済み", "支払済み"))
+        paid = sum(1 for _, s in rows if s == "支払済み")
         return {"total": total, "issued": issued, "paid": paid,
+                "invoice_issued": invoice_issued, "receipt_issued": receipt_issued,
                 "pending": total - issued}
-    issued_pms = set(
-        row[0] for row in
-        session.query(Issuance.project_member_id)
+
+    # 各会員について領収書・請求書の発行状況を判定
+    issued_rows = session.query(Issuance.project_member_id, Issuance.doc_type)\
         .filter(
             Issuance.project_member_id.in_(pm_ids),
             Issuance.status.in_(["発行済み", "支払済み"])
         ).all()
-    )
+
     paid_pms = set(
         row[0] for row in
         session.query(Issuance.project_member_id)
@@ -167,7 +175,21 @@ def get_project_progress(session: Session, project_id: int) -> dict:
             Issuance.status == "支払済み"
         ).all()
     )
-    issued = len(issued_pms)
+
+    pm_has_receipt = set()
+    pm_has_invoice = set()
+    for pm_id, doc_type in issued_rows:
+        if doc_type == "receipt":
+            pm_has_receipt.add(pm_id)
+        elif doc_type == "invoice":
+            pm_has_invoice.add(pm_id)
+
+    receipt_issued = len(pm_has_receipt)
+    # 請求書のみ（領収書未発行）の会員
+    invoice_only = pm_has_invoice - pm_has_receipt
+    invoice_issued = len(invoice_only)
+    issued = len(pm_has_invoice | pm_has_receipt)
     paid = len(paid_pms)
     return {"total": total, "issued": issued, "paid": paid,
+            "invoice_issued": invoice_issued, "receipt_issued": receipt_issued,
             "pending": total - issued}

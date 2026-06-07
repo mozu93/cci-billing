@@ -69,17 +69,22 @@ def test_roster_import_dialog_maps_rows(qtbot, memory_db):
     from app.ui.roster_import import RosterImportDialog
     dlg = RosterImportDialog(project_id=1)
     qtbot.addWidget(dlg)
-    dlg._set_raw_rows([["○○商事", "田中", "t@example.com"]])
+    # 先頭列=会員番号、2列目=事業所名 の順でデータを渡す
+    dlg._set_raw_rows([["A-001", "○○商事", "田中"]])
     rows = dlg._mapped_rows()
     assert len(rows) == 1
     assert rows[0]["organization_name"] == "○○商事"
+    assert rows[0]["member_number"] == "A-001"
 
 
-def test_roster_import_excludes_member_number(qtbot, memory_db):
+def test_roster_import_includes_member_number(qtbot, memory_db):
     from app.ui.roster_import import RosterImportDialog
     from app.utils.excel_utils import ROSTER_COLUMNS
     dlg = RosterImportDialog(project_id=1)
     qtbot.addWidget(dlg)
-    # マッピング対象に member_number が含まれない
-    assert "member_number" not in dlg._field_combos
-    assert "member_number" not in ROSTER_COLUMNS
+    # 会員番号が取り込み対象に含まれる
+    assert "member_number" in dlg._field_combos
+    assert "member_number" in ROSTER_COLUMNS
+    # 住所が住所１・住所２に分かれている
+    assert "address" in ROSTER_COLUMNS
+    assert "address2" in ROSTER_COLUMNS
