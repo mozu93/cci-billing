@@ -50,10 +50,15 @@ class _LineRow(QFrame):
         self.cat_combo = QComboBox()
         self.cat_combo.setFixedWidth(W_CAT)
         self.cat_combo.setFixedHeight(FIELD_H)
-        # 項目
+        # 項目（テンプレート選択 or 直接入力）
         self.tmpl_combo = QComboBox()
+        self.tmpl_combo.setEditable(True)
+        self.tmpl_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.tmpl_combo.setFixedHeight(FIELD_H)
-        self.tmpl_combo.addItem("（項目を選択）", None)
+        self.tmpl_combo.addItem("（項目を選択または入力）", None)
+        self.tmpl_combo.lineEdit().setPlaceholderText("（項目を選択または入力）")
+        self.tmpl_combo.lineEdit().textChanged.connect(
+            lambda: panel._update_total())
         # 単価
         self.price_edit = QLineEdit("0")
         self.price_edit.setFixedWidth(W_PRICE)
@@ -171,6 +176,20 @@ class IssuanceCounterWidget(QWidget):
 
     def _populate_row_from_line(self, row: "_LineRow", line) -> None:
         """IssuanceLine の内容を行ウィジェットに復元する。"""
+        if line.item_template_id is None:
+            # 直接入力行
+            row.tmpl_combo.blockSignals(True)
+            row.tmpl_combo.setCurrentIndex(0)
+            row.tmpl_combo.setEditText(line.item_name or "")
+            row.tmpl_combo.blockSignals(False)
+            row.price_edit.blockSignals(True)
+            row.price_edit.setText(str(int(line.unit_price)))
+            row.price_edit.blockSignals(False)
+            row.qty_spin.blockSignals(True)
+            row.qty_spin.setValue(int(line.quantity))
+            row.qty_spin.blockSignals(False)
+            return
+
         tmpl = next((t for t in self._templates if t.id == line.item_template_id), None)
         cat_id = tmpl.category_id if tmpl else None
 
@@ -363,15 +382,15 @@ class IssuanceCounterWidget(QWidget):
         combo.blockSignals(False)
 
     def _refresh_tmpl_combo(self, row: _LineRow):
-        cat_id     = row.cat_combo.currentData()
-        cur_id     = row.tmpl_combo.currentData()
+        cat_id    = row.cat_combo.currentData()
+        cur_id    = row.tmpl_combo.currentData()
+        cur_text  = row.tmpl_combo.currentText()  # 直接入力テキストを保持
         candidates = self._tmpls_for_cat(cat_id)
         row.tmpl_combo.blockSignals(True)
         row.tmpl_combo.clear()
-        row.tmpl_combo.addItem("（項目を選択）", None)
+        row.tmpl_combo.addItem("（項目を選択または入力）", None)
         for t in candidates:
             label = f"{t.name}　¥{int(t.unit_price):,}/{t.unit}"
-            # 業務名で絞り込んでいないときは、同名項目を見分けられるよう業務名を併記
             if cat_id is None:
                 cname = self._cat_name_by_id.get(t.category_id)
                 if cname:
@@ -386,6 +405,10 @@ class IssuanceCounterWidget(QWidget):
                     break
         if not restored:
             row.tmpl_combo.setCurrentIndex(0)
+            # テンプレート未選択かつ直接入力テキストがあれば復元
+            _ph = "（項目を選択または入力）"
+            if cur_text and cur_text != _ph:
+                row.tmpl_combo.setEditText(cur_text)
         row.tmpl_combo.blockSignals(False)
 
     # ── 行操作 ──────────────────────────────────────────
@@ -419,7 +442,8 @@ class IssuanceCounterWidget(QWidget):
     def _apply_template_to_row(self, row: _LineRow):
         tmpl_id = row.tmpl_combo.currentData()
         tmpl = next((t for t in self._templates if t.id == tmpl_id), None)
-        row.price_edit.setText(str(int(tmpl.unit_price)) if tmpl else "0")
+        if tmpl is not None:
+            row.price_edit.setText(str(int(tmpl.unit_price)))
         self._update_total()
 
     def _update_total(self):
@@ -456,35 +480,41 @@ class IssuanceCounterWidget(QWidget):
             QMessageBox.warning(self, "入力エラー",
                                 "事業所名または担当者・個人名を入力してください。")
             return
-        if not self._templates:
-            QMessageBox.warning(self, "テンプレート未登録",
-                                "請求項目テンプレートが登録されていません。\n"
-                                "設定 → 請求項目テンプレートから登録してください。")
-            return
         if not self._rows:
             QMessageBox.warning(self, "入力エラー", "項目を1つ以上追加してください。")
             return
 
+        _PH = "（項目を選択または入力）"
         lines_data = []
         for row in self._rows:
             tmpl_id = row.tmpl_combo.currentData()
             tmpl    = next((t for t in self._templates if t.id == tmpl_id), None)
-            if tmpl is None:
-                continue
-            price = row.price() or int(tmpl.unit_price)
-            lines_data.append({
-                "item_template_id": tmpl.id,
-                "item_name":        tmpl.name,
-                "quantity":         row.qty_spin.value(),
-                "unit":             tmpl.unit,
-                "unit_price":       price,
-                "tax_rate":         tmpl.tax_rate,
-            })
+            if tmpl is not None:
+                price = row.price() or int(tmpl.unit_price)
+                lines_data.append({
+                    "item_template_id": tmpl.id,
+                    "item_name":        tmpl.name,
+                    "quantity":         row.qty_spin.value(),
+                    "unit":             tmpl.unit,
+                    "unit_price":       price,
+                    "tax_rate":         tmpl.tax_rate,
+                })
+            else:
+                name = row.tmpl_combo.currentText().strip()
+                if name and name != _PH:
+                    lines_data.append({
+                        "item_template_id": None,
+                        "item_name":        name,
+                        "quantity":         row.qty_spin.value(),
+                        "unit":             "式",
+                        "unit_price":       row.price(),
+                        "tax_rate":         10,
+                    })
 
         if not lines_data:
             QMessageBox.warning(self, "エラー",
-                                "項目が選択されていません。\n"
-                                "各行で項目を選択してください。")
+                                "項目が入力されていません。\n"
+                                "各行で項目を選択するか、直接入力してください。")
             return
 
         doc_type = self._doc_type_str
