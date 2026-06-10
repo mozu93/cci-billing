@@ -72,6 +72,18 @@ class ReissueWidget(QWidget):
 
         top.addStretch()
 
+        self._btn_edit = QPushButton("内容修正")
+        self._btn_edit.setFixedHeight(36)
+        self._btn_edit.setEnabled(False)
+        self._btn_edit.setStyleSheet(
+            "QPushButton { background:#0e7490; color:white; border-radius:4px;"
+            " font-weight:bold; padding:0 16px; }"
+            "QPushButton:hover { background:#0c6280; }"
+            "QPushButton:disabled { background:#cccccc; color:#888; }"
+        )
+        self._btn_edit.clicked.connect(self._edit_issuance)
+        top.addWidget(self._btn_edit)
+
         self._btn_reissue = QPushButton("再発行（PDF再出力）")
         self._btn_reissue.setFixedHeight(36)
         self._btn_reissue.setStyleSheet(
@@ -110,6 +122,7 @@ class ReissueWidget(QWidget):
         self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._table.setSortingEnabled(True)
+        self._table.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self._table)
 
         self._count_lbl = QLabel("")
@@ -205,7 +218,10 @@ class ReissueWidget(QWidget):
                 (COL_DATE, issued),
             ]:
                 item = QTableWidgetItem(val)
-                item.setData(Qt.ItemDataRole.UserRole, iss.id)
+                item.setData(Qt.ItemDataRole.UserRole,     iss.id)
+                item.setData(Qt.ItemDataRole.UserRole + 1, proj.project_type)
+                item.setData(Qt.ItemDataRole.UserRole + 2, iss.status)
+                item.setData(Qt.ItemDataRole.UserRole + 3, iss.doc_type)
                 self._table.setItem(r, col, item)
 
         self._table.setSortingEnabled(True)
@@ -232,6 +248,44 @@ class ReissueWidget(QWidget):
             if not hidden:
                 total += 1
         self._count_lbl.setText(f"{total} 件")
+
+    def _on_selection_changed(self):
+        row = self._table.currentRow()
+        if row < 0:
+            self._btn_edit.setEnabled(False)
+            return
+        item = self._table.item(row, COL_NUM)
+        proj_type = item.data(Qt.ItemDataRole.UserRole + 1) if item else None
+        status    = item.data(Qt.ItemDataRole.UserRole + 2) if item else None
+        # counter プロジェクトかつ未払い（発行済み）の場合のみ編集可
+        self._btn_edit.setEnabled(proj_type == "counter" and status == "発行済み")
+
+    # ── 内容修正 ─────────────────────────────────────────────────────
+
+    def _edit_issuance(self):
+        row = self._table.currentRow()
+        if row < 0:
+            return
+        item     = self._table.item(row, COL_NUM)
+        iss_id   = item.data(Qt.ItemDataRole.UserRole)
+        doc_type = item.data(Qt.ItemDataRole.UserRole + 3)
+
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout
+        from app.ui.issuance_counter import IssuanceCounterWidget
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("フリー発行の内容修正")
+        dlg.setMinimumWidth(920)
+        dlg.setMinimumHeight(600)
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        widget = IssuanceCounterWidget(doc_type=doc_type, edit_issuance_id=iss_id)
+        widget.edit_completed.connect(dlg.accept)
+        layout.addWidget(widget)
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._load()
 
     # ── 再発行 ───────────────────────────────────────────────────────
 

@@ -36,7 +36,7 @@ def _fmt(n) -> str:
         return "0"
 
 
-def _s(name, size=10, bold=False, align=TA_LEFT, color=None, leading=None):
+def _s(name, size=10, bold=False, align=TA_LEFT, color=None, leading=None, **kwargs):
     register_fonts()
     return ParagraphStyle(
         name=name,
@@ -45,6 +45,7 @@ def _s(name, size=10, bold=False, align=TA_LEFT, color=None, leading=None):
         leading=leading or max(size * 1.5, size + 3),
         alignment=align,
         textColor=color or C_BLACK,
+        **kwargs,
     )
 
 
@@ -235,15 +236,6 @@ def generate_invoice_pdf(issuance, company, output_path: str,
     story.append(Spacer(1, 1*mm))
     story.append(Paragraph(display_notes, _s("note_body", size=10, color=C_BLACK)))
 
-    # ── ⑧ インボイスフッター ─────────────────────────────────
-    if company and company.invoice_reg_number:
-        story.append(Spacer(1, 3*mm))
-        story.append(Paragraph(
-            f"※ 本書は適格請求書（インボイス）です。"
-            f"登録番号：{company.invoice_reg_number}",
-            _s("footer", size=8, color=C_SUB)
-        ))
-
     doc.build(story)
     return output_path
 
@@ -296,7 +288,12 @@ def _build_client_block(issuance, subject: str = "",
         display = subject
     if display:
         parts.append(Spacer(1, 3*mm))
-        parts.append(Paragraph(f"件名：{display}", _s("subj", size=10)))
+        # rightIndent=30: 3文字分早く折り返し
+        # leftIndent=30 + firstLineIndent=-30: 2行目以降を3文字分インデント
+        parts.append(Paragraph(
+            f"件名：{display}",
+            _s("subj", size=10, rightIndent=30, leftIndent=30, firstLineIndent=-30)
+        ))
 
     return parts
 
@@ -355,11 +352,11 @@ _TAX_LABEL = {10: "10%", 8: "8%軽", 0: "非", -1: "不"}
 def _build_line_table(issuance, W: float) -> Table:
     import html as _html
     # 税率・単価・金額を各33%縮小、数量と単位は同幅、品名を最大化
-    w_tax  = W * 0.10 * (2/3) * 1.10  # 税率 -33%後に+10%
-    w_qty  = W * 0.08 * 0.80           # 数量 -20%
-    w_unit = W * 0.08                  # 単位（元の数量幅と同幅）
-    w_up   = W * 0.17 * (2/3)  # 単価 -33%
-    w_amt  = W * 0.18 * (2/3)  # 金額 -33%
+    w_tax  = W * 0.10 * (2/3) * 1.10  # 税率
+    w_qty  = W * 0.08 * 0.80           # 数量
+    w_unit = W * 0.08                  # 単位
+    w_up   = W * 0.14                  # 単価（8桁対応）
+    w_amt  = W * 0.155                 # 金額（8桁対応）
     w_name = W - w_tax - w_qty - w_unit - w_up - w_amt
     col_widths = [w_name, w_tax, w_qty, w_unit, w_up, w_amt]
     headers    = ["品名・摘要", "税率", "数量", "単位", "単価", "金額"]
@@ -427,18 +424,18 @@ def _build_tax_rows(issuance, suffix: str, total: int, tax_W: float = 120*mm):
 
     rows: list[tuple[str, str]] = []
     if tax10_incl:
-        rows.append(("10%税率　対象小計", f"¥ {_fmt(tax10_incl)}"))
+        rows.append(("10%税率　対象小計", _fmt(tax10_incl)))
     if tax8_incl:
-        rows.append(("8%税率　対象小計",  f"¥ {_fmt(tax8_incl)}"))
+        rows.append(("8%税率　対象小計",  _fmt(tax8_incl)))
     if tax10_incl:
-        rows.append(("10%　税額",          f"¥ {_fmt(tax10_amt)}"))
+        rows.append(("10%　税額",          _fmt(tax10_amt)))
     if tax8_incl:
-        rows.append(("8%　税額",           f"¥ {_fmt(tax8_amt)}"))
+        rows.append(("8%　税額",           _fmt(tax8_amt)))
     if exempt:
-        rows.append(("非課税　合計",        f"¥ {_fmt(exempt)}"))
+        rows.append(("非課税　合計",        _fmt(exempt)))
     if non_tax:
-        rows.append(("不課税　合計",        f"¥ {_fmt(non_tax)}"))
-    rows.append((f"合　計（{suffix}）",    f"¥ {_fmt(total)} -"))
+        rows.append(("不課税　合計",        _fmt(non_tax)))
+    rows.append((f"合　計（{suffix}）",    f"{_fmt(total)} -"))
 
     lbl = _s("tx_lbl", size=10, leading=16)
     val = _s("tx_val", size=10, align=TA_RIGHT, leading=16)
@@ -454,8 +451,8 @@ def _build_tax_rows(issuance, suffix: str, total: int, tax_W: float = 120*mm):
             Paragraph(v, tot_val if is_last else val),
         ])
 
-    lw = tax_W * 0.72
-    vw = tax_W * 0.28
+    lw = tax_W * 0.60
+    vw = tax_W * 0.40
     tbl = Table(data, colWidths=[lw, vw], hAlign="RIGHT")
     n_data = len(data)
     tbl.setStyle(TableStyle([

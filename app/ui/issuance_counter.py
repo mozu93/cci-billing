@@ -3,14 +3,14 @@ from datetime import date
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
     QLineEdit, QSpinBox, QComboBox, QLabel, QPushButton,
-    QMessageBox, QFrame, QScrollArea, QStyleFactory
+    QMessageBox, QFrame, QScrollArea, QStyleFactory, QDialog
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QIntValidator
 from app.database.connection import get_session
 from app.services.category_service import get_active_categories
 from app.services.item_template_service import get_all_active_templates
-from app.services.issuance_service import create_direct_issuance
+from app.services.issuance_service import create_direct_issuance, update_direct_issuance
 from app.utils import current_user
 
 # 列幅・行高（px）
@@ -109,9 +109,13 @@ class _LineRow(QFrame):
 
 
 class IssuanceCounterWidget(QWidget):
-    def __init__(self, doc_type: str = "receipt"):
+    edit_completed = pyqtSignal()
+
+    def __init__(self, doc_type: str = "receipt", edit_issuance_id: int | None = None):
         super().__init__()
         self._doc_type_str = doc_type
+        self._edit_issuance_id = edit_issuance_id
+        self._edit_loaded = False
         self._categories = []
         self._templates  = []
         self._cat_name_by_id: dict[int, str] = {}
@@ -122,6 +126,9 @@ class IssuanceCounterWidget(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self._reload_master()
+        if self._edit_issuance_id is not None and not self._edit_loaded:
+            self._load_edit_data()
+            self._edit_loaded = True
 
     # ── マスタ読み込み ───────────────────────────────────
 
@@ -136,6 +143,61 @@ class IssuanceCounterWidget(QWidget):
         for row in self._rows:
             self._refresh_cat_combo(row.cat_combo)
             self._refresh_tmpl_combo(row)
+
+    def _load_edit_data(self):
+        """編集モード：既存の Issuance からフォームを復元する。"""
+        from app.database.connection import get_session
+        from app.database.models import Issuance
+        from sqlalchemy.orm import joinedload
+        session = get_session()
+        try:
+            iss = (session.query(Issuance)
+                   .options(joinedload(Issuance.lines))
+                   .filter_by(id=self._edit_issuance_id)
+                   .first())
+            if iss is None:
+                return
+            self._org_name.setText(iss.recipient_organization or "")
+            self._rep_name.setText(iss.recipient_name or "")
+            idx = self._delivery.findText(iss.delivery_method or "")
+            if idx >= 0:
+                self._delivery.setCurrentIndex(idx)
+            for line in iss.lines:
+                self._add_row()
+                self._populate_row_from_line(self._rows[-1], line)
+        finally:
+            session.close()
+        self._update_total()
+
+    def _populate_row_from_line(self, row: "_LineRow", line) -> None:
+        """IssuanceLine の内容を行ウィジェットに復元する。"""
+        tmpl = next((t for t in self._templates if t.id == line.item_template_id), None)
+        cat_id = tmpl.category_id if tmpl else None
+
+        # カテゴリ選択（シグナル不要）
+        row.cat_combo.blockSignals(True)
+        for i in range(row.cat_combo.count()):
+            if row.cat_combo.itemData(i) == cat_id:
+                row.cat_combo.setCurrentIndex(i)
+                break
+        row.cat_combo.blockSignals(False)
+
+        # テンプレートコンボを再構築してから選択
+        self._refresh_tmpl_combo(row)
+        row.tmpl_combo.blockSignals(True)
+        for i in range(row.tmpl_combo.count()):
+            if row.tmpl_combo.itemData(i) == line.item_template_id:
+                row.tmpl_combo.setCurrentIndex(i)
+                break
+        row.tmpl_combo.blockSignals(False)
+
+        row.price_edit.blockSignals(True)
+        row.price_edit.setText(str(int(line.unit_price)))
+        row.price_edit.blockSignals(False)
+
+        row.qty_spin.blockSignals(True)
+        row.qty_spin.setValue(int(line.quantity))
+        row.qty_spin.blockSignals(False)
 
     def _tmpls_for_cat(self, cat_id) -> list:
         if cat_id is None:
@@ -251,7 +313,8 @@ class IssuanceCounterWidget(QWidget):
             "font-size: 18px; font-weight: bold; color: #1D4ED8; padding: 6px 2px;")
         layout.addWidget(self._total_label)
 
-        self._btn_issue = QPushButton("発行する")
+        _btn_lbl = "修正して再発行" if self._edit_issuance_id else "発行する"
+        self._btn_issue = QPushButton(_btn_lbl)
         self._btn_issue.setFixedHeight(44)
         self._btn_issue.setStyleSheet(
             "font-size: 14px; font-weight: bold;"
@@ -260,7 +323,8 @@ class IssuanceCounterWidget(QWidget):
         layout.addWidget(self._btn_issue)
         layout.addStretch()
 
-        self._add_row()
+        if not self._edit_issuance_id:
+            self._add_row()
 
     def _make_header(self) -> QWidget:
         hdr = QWidget()
@@ -423,26 +487,37 @@ class IssuanceCounterWidget(QWidget):
                                 "各行で項目を選択してください。")
             return
 
-        project_name = self._derive_project_name()
-
         doc_type = self._doc_type_str
         fmt      = "a4" if doc_type == "invoice" else "a5"
-        today    = date.today()
         session  = get_session()
         try:
-            iss = create_direct_issuance(
-                session,
-                lines_data             = lines_data,
-                recipient_organization = org,
-                recipient_name         = rep,
-                doc_type               = doc_type,
-                fiscal_year            = today.year,
-                month                  = today.month,
-                staff_id               = current_user.get_id(),
-                staff_name             = current_user.get_name(),
-                delivery_method        = self._delivery.currentText(),
-                project_name           = project_name,
-            )
+            if self._edit_issuance_id is not None:
+                iss = update_direct_issuance(
+                    session,
+                    issuance_id            = self._edit_issuance_id,
+                    lines_data             = lines_data,
+                    recipient_organization = org,
+                    recipient_name         = rep,
+                    delivery_method        = self._delivery.currentText(),
+                    staff_id               = current_user.get_id(),
+                    staff_name             = current_user.get_name(),
+                )
+            else:
+                project_name = self._derive_project_name()
+                today = date.today()
+                iss = create_direct_issuance(
+                    session,
+                    lines_data             = lines_data,
+                    recipient_organization = org,
+                    recipient_name         = rep,
+                    doc_type               = doc_type,
+                    fiscal_year            = today.year,
+                    month                  = today.month,
+                    staff_id               = current_user.get_id(),
+                    staff_name             = current_user.get_name(),
+                    delivery_method        = self._delivery.currentText(),
+                    project_name           = project_name,
+                )
             from app.utils.pdf_helpers import generate_and_open
             due_date = None
             if doc_type == "invoice":
@@ -458,9 +533,12 @@ class IssuanceCounterWidget(QWidget):
         finally:
             session.close()
 
-        self._org_name.clear()
-        self._rep_name.clear()
-        for row in list(self._rows):
-            self._remove_row(row)
-        self._add_row()
-        self._update_total()
+        if self._edit_issuance_id is not None:
+            self.edit_completed.emit()
+        else:
+            self._org_name.clear()
+            self._rep_name.clear()
+            for row in list(self._rows):
+                self._remove_row(row)
+            self._add_row()
+            self._update_total()

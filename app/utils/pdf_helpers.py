@@ -74,14 +74,14 @@ def generate_and_open(issuance, session, receipt_fmt: str = "a5",
                 address = pm.address or ""
                 address2 = pm.address2 or ""
         subject = ""
-        due_date = None
         proj_notes = ""
         if issuance.project_id:
             from app.database.models import Project
             proj = session.get(Project, issuance.project_id)
             if proj:
                 subject = proj.name or ""
-                due_date = proj.due_date
+                if due_date is None:
+                    due_date = proj.due_date
                 proj_notes = proj.notes or ""
         generate_invoice_pdf(issuance, company, path, bank,
                              seal_image=seal, reissue=reissue,

@@ -264,6 +264,44 @@ def create_direct_issuance(session: Session, lines_data: list[dict],
     return issuance
 
 
+def update_direct_issuance(session: Session, issuance_id: int,
+                            lines_data: list[dict],
+                            recipient_organization: str, recipient_name: str,
+                            delivery_method: str,
+                            staff_id: int | None = None,
+                            staff_name: str = "") -> Issuance:
+    issuance = session.get(Issuance, issuance_id)
+    if issuance is None:
+        raise ValueError("発行データが見つかりません。")
+    for line in list(issuance.lines):
+        session.delete(line)
+    session.flush()
+    total = sum(int(l["unit_price"]) * int(l["quantity"]) for l in lines_data)
+    issuance.recipient_organization = recipient_organization
+    issuance.recipient_name = recipient_name
+    issuance.delivery_method = delivery_method
+    issuance.amount = total
+    if staff_id is not None:
+        issuance.staff_id = staff_id
+    if staff_name:
+        issuance.staff_name = staff_name
+    issuance.issued_at = datetime.now()
+    for ld in lines_data:
+        session.add(IssuanceLine(
+            issuance_id=issuance.id,
+            item_template_id=ld.get("item_template_id"),
+            item_name=ld["item_name"],
+            quantity=ld["quantity"],
+            unit=ld["unit"],
+            unit_price=ld["unit_price"],
+            tax_rate=ld["tax_rate"],
+            line_total=int(ld["unit_price"]) * int(ld["quantity"]),
+        ))
+    session.commit()
+    session.refresh(issuance)
+    return issuance
+
+
 def get_pending_issuances_for_project_member(session: Session,
                                              project_member_id: int) -> list[Issuance]:
     return (session.query(Issuance)
