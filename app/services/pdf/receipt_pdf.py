@@ -2,11 +2,10 @@
 """
 領収書 PDF 生成
   A5縦（1事業所）: 上=原本 / 下=控え
-  A4横（2事業所）: 左=1件目(原本+控え) / 右=2件目(原本+控え)
 """
 import os
 from datetime import date as date_type
-from reportlab.lib.pagesizes import A5, A4, landscape
+from reportlab.lib.pagesizes import A5
 from reportlab.lib.units import mm
 from reportlab.lib.colors import HexColor, black
 from reportlab.pdfgen.canvas import Canvas
@@ -56,59 +55,6 @@ def generate_receipt_pdf(issuance, company, output_path: str,
     c.setDash([3, 3], 0)
     c.line(margin, slot_h, page_w - margin, slot_h)
     c.restoreState()
-
-    c.save()
-    return output_path
-
-
-def generate_receipt_pdf_a4(issuances: list, company, output_path: str,
-                             seal_image=None, reissue: bool = False) -> str:
-    """A4横・左右2事業所。issuances は1〜2件。各半分に原本＋控えを上下配置。"""
-    register_fonts()
-    parent = os.path.dirname(os.path.abspath(output_path))
-    os.makedirs(parent, exist_ok=True)
-
-    page_w, page_h = landscape(A4)   # 297mm × 210mm
-    margin  = 3 * mm
-    gap     = 2 * mm
-    col_w   = (page_w - 2 * margin - gap) / 2   # 各列幅（≒A5縦幅）
-    slot_h  = (page_h - 2 * margin - gap) / 2   # 各行高（上=原本 / 下=控え）
-    draw_w  = col_w - 2 * margin
-    draw_h  = slot_h - margin
-
-    c = Canvas(output_path, pagesize=landscape(A4))
-    c.setTitle("領収書")
-    c.setAuthor(getattr(company, "name", "") or "")
-
-    for col, iss in enumerate(issuances[:2]):
-        x0 = margin + col * (col_w + gap) + margin
-        # 上：原本
-        y_top = margin + slot_h + gap + margin
-        _draw_one(c, iss, company, seal_image, x0, y_top, draw_w, draw_h,
-                  is_copy=False, reissue=reissue)
-        # 下：控え
-        y_btm = margin + margin
-        _draw_one(c, iss, company, seal_image, x0, y_btm, draw_w, draw_h,
-                  is_copy=True, reissue=reissue)
-        # 水平切り取り線（列内）
-        cut_y = margin + slot_h + gap / 2
-        c.saveState()
-        c.setStrokeColor(C_CUT_LINE)
-        c.setLineWidth(0.4)
-        c.setDash([3, 3], 0)
-        lx = margin + col * (col_w + gap)
-        c.line(lx, cut_y, lx + col_w, cut_y)
-        c.restoreState()
-
-    # 垂直切り取り線（2件の場合のみ）
-    if len(issuances) >= 2:
-        c.saveState()
-        c.setStrokeColor(C_CUT_LINE)
-        c.setLineWidth(0.4)
-        c.setDash([3, 3], 0)
-        cx = margin + col_w + gap / 2
-        c.line(cx, margin, cx, page_h - margin)
-        c.restoreState()
 
     c.save()
     return output_path

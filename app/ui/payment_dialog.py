@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QHBoxLayout,
     QDateEdit, QSpinBox, QComboBox, QLineEdit,
     QPushButton, QLabel, QWidget, QTableWidget,
-    QTableWidgetItem, QHeaderView, QMessageBox
+    QTableWidgetItem, QHeaderView, QMessageBox, QProgressDialog
 )
 from PyQt6.QtCore import Qt, QDate, QTimer
 from app.database.connection import get_session
@@ -79,6 +79,12 @@ class PaymentManagementWidget(QWidget):
         btn_pay_checked = QPushButton("チェックした行を支払済みに更新")
         btn_pay_checked.clicked.connect(self._mark_paid_checked)
         btn_row.addWidget(btn_pay_checked)
+        btn_reminder = QPushButton("期限超過の督促メール…")
+        btn_reminder.setToolTip(
+            "支払期限を過ぎても未入金の請求書について、\n"
+            "名簿のメールアドレス宛に督促メールを一括送信します。")
+        btn_reminder.clicked.connect(self._open_reminder_dialog)
+        btn_row.addWidget(btn_reminder)
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
@@ -242,6 +248,186 @@ class PaymentManagementWidget(QWidget):
             session.close()
         self._load()
 
+    # ── 督促メール ─────────────────────────────────────────────────
+
+    def _open_reminder_dialog(self):
+        project_id = self._proj_combo.currentData()
+        if project_id is None:
+            return
+        session = get_session()
+        try:
+            from app.database.models import Project, ProjectMember
+            proj = session.get(Project, project_id)
+            if proj is None:
+                return
+            due = proj.due_date
+            if due is None:
+                QMessageBox.information(
+                    self, "支払期限未設定",
+                    "この名簿には支払期限が設定されていないため、\n"
+                    "期限超過を判定できません。\n"
+                    "「請求・領収書データ」タブで支払期限を設定してください。")
+                return
+            if due >= date.today():
+                QMessageBox.information(
+                    self, "対象なし",
+                    f"支払期限（{due.strftime('%Y/%m/%d')}）を"
+                    "まだ過ぎていません。")
+                return
+            targets = []
+            for iss in get_project_issuances(session, project_id, "発行済み"):
+                if iss.doc_type != "invoice":
+                    continue
+                email = ""
+                if iss.project_member_id:
+                    pm = session.get(ProjectMember, iss.project_member_id)
+                    email = (pm.email or "").strip() if pm else ""
+                recipient = (iss.recipient_organization
+                             or iss.recipient_name or "")
+                targets.append((iss.id, iss.doc_number, recipient,
+                                int(iss.amount), email))
+        finally:
+            session.close()
+
+        if not targets:
+            QMessageBox.information(
+                self, "対象なし", "期限超過・未入金の請求書はありません。")
+            return
+        _ReminderDialog(targets, due, self).exec()
+
+
+class _ReminderDialog(QDialog):
+    """期限超過・未入金の請求書に督促メールを一括送信するダイアログ。"""
+
+    _COLS = [("", 30), ("発行番号", 120), ("宛先", 220),
+             ("金額", 90), ("メール", 180)]
+
+    def __init__(self, targets: list[tuple], due_date, parent=None):
+        # targets: [(issuance_id, doc_number, recipient, amount, email)]
+        super().__init__(parent)
+        self._targets = targets
+        self._due_date = due_date
+        self.setWindowTitle("督促メール送信")
+        self.resize(680, 480)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(
+            f"支払期限（{due_date.strftime('%Y/%m/%d')}）を過ぎた未入金の請求書："
+            f"{len(targets)}件\n"
+            "送信する行にチェックを入れてください"
+            "（アドレス未登録の行は送信できません）。"))
+
+        self._table = QTableWidget(0, len(self._COLS))
+        self._table.setHorizontalHeaderLabels([c[0] for c in self._COLS])
+        hdr = self._table.horizontalHeader()
+        for i, (_, w) in enumerate(self._COLS):
+            hdr.setSectionResizeMode(
+                i, QHeaderView.ResizeMode.Fixed if i == 0
+                else QHeaderView.ResizeMode.Interactive)
+            self._table.setColumnWidth(i, w)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        for iss_id, doc_number, recipient, amount, email in targets:
+            row = self._table.rowCount()
+            self._table.insertRow(row)
+            chk = QTableWidgetItem()
+            if email:
+                chk.setFlags(Qt.ItemFlag.ItemIsEnabled
+                             | Qt.ItemFlag.ItemIsUserCheckable)
+                chk.setCheckState(Qt.CheckState.Checked)
+            else:
+                chk.setFlags(Qt.ItemFlag.NoItemFlags)
+            self._table.setItem(row, 0, chk)
+            for col, val in enumerate([
+                doc_number, recipient, f"¥{amount:,}",
+                email or "（アドレス未登録）",
+            ], start=1):
+                item = QTableWidgetItem(val)
+                item.setData(Qt.ItemDataRole.UserRole, iss_id)
+                self._table.setItem(row, col, item)
+        layout.addWidget(self._table)
+
+        btn_row = QHBoxLayout()
+        btn_cancel = QPushButton("閉じる")
+        btn_cancel.clicked.connect(self.reject)
+        btn_send = QPushButton("チェックした行に督促メールを送信")
+        btn_send.clicked.connect(self._send)
+        btn_row.addWidget(btn_cancel)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_send)
+        layout.addLayout(btn_row)
+
+    def _checked_ids(self) -> list[int]:
+        ids = []
+        for r in range(self._table.rowCount()):
+            chk = self._table.item(r, 0)
+            if chk and chk.checkState() == Qt.CheckState.Checked:
+                item = self._table.item(r, 1)
+                if item:
+                    ids.append(item.data(Qt.ItemDataRole.UserRole))
+        return ids
+
+    def _send(self):
+        ids = self._checked_ids()
+        if not ids:
+            QMessageBox.information(self, "未選択",
+                                    "送信する行にチェックを入れてください。")
+            return
+        box = QMessageBox(
+            QMessageBox.Icon.Question, "送信確認",
+            f"{len(ids)}件に督促メールを送信します。よろしいですか？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            self)
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        if box.exec() != QMessageBox.StandardButton.Yes:
+            return
+
+        from app.services.email_service import SmtpSession, send_reminder_email
+        from app.services.operation_log_service import add_log
+        from app.database.models import Issuance
+
+        progress = QProgressDialog(
+            "督促メールを送信中…", "中止", 0, len(ids), self)
+        progress.setWindowTitle("督促メール")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+
+        session = get_session()
+        sent = 0
+        errors = []
+        try:
+            with SmtpSession() as smtp:
+                for i, iss_id in enumerate(ids):
+                    if progress.wasCanceled():
+                        break
+                    progress.setValue(i)
+                    iss = session.get(Issuance, iss_id)
+                    if iss is None:
+                        continue
+                    try:
+                        addr = send_reminder_email(
+                            session, iss, self._due_date, smtp=smtp)
+                        sent += 1
+                        add_log(session, "督促メール送信", "issuance", iss.id,
+                                f"{iss.doc_number} → {addr}")
+                    except Exception as e:
+                        errors.append(str(e))
+                        add_log(session, "督促メール送信失敗", "issuance",
+                                iss.id, f"{iss.doc_number}：{e}")
+        except Exception as e:
+            errors.append(f"SMTP接続エラー：{e}")
+        finally:
+            progress.setValue(len(ids))
+            session.close()
+
+        msg = f"{sent}件の督促メールを送信しました。"
+        if errors:
+            shown = "\n".join(errors[:10])
+            more = f"\n…ほか{len(errors) - 10}件" if len(errors) > 10 else ""
+            QMessageBox.warning(self, "督促メール",
+                                f"{msg}\n\n送信できなかったもの：\n{shown}{more}")
+        else:
+            QMessageBox.information(self, "督促メール", msg)
+        self.accept()
 
 
 class _BatchPaymentDialog(QDialog):

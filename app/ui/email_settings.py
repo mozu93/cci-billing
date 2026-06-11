@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
 )
 from app.utils.app_config import get_config, save_config
 from app.services.email_service import (
-    DEFAULT_SUBJECT, DEFAULT_BODY, PLACEHOLDER_KEYS
+    _TEMPLATE_DEFAULTS, PLACEHOLDER_KEYS
 )
 
 
@@ -48,6 +48,7 @@ class EmailSettingsWidget(QWidget):
         self._tmpl_type = QComboBox()
         self._tmpl_type.addItem("請求書", "invoice")
         self._tmpl_type.addItem("領収書", "receipt")
+        self._tmpl_type.addItem("督促（支払期限超過）", "reminder")
         self._tmpl_type.currentIndexChanged.connect(self._on_tmpl_type_changed)
         self._tmpl_subject = QLineEdit()
         self._tmpl_body = QTextEdit()
@@ -56,6 +57,7 @@ class EmailSettingsWidget(QWidget):
         help_lbl = QLabel(
             "差し込みタグ："
             + "　".join("{" + k + "}" for k in PLACEHOLDER_KEYS)
+            + "　{支払期限}（督促のみ）"
             + "\n発行時に各宛先の情報に置き換えられます。"
         )
         help_lbl.setWordWrap(True)
@@ -89,11 +91,11 @@ class EmailSettingsWidget(QWidget):
 
         saved = get_config().get("email_templates", {})
         self._tmpl_data = {}
-        for key in ("invoice", "receipt"):
+        for key, (d_subject, d_body) in _TEMPLATE_DEFAULTS.items():
             t = saved.get(key, {})
             self._tmpl_data[key] = {
-                "subject": t.get("subject") or DEFAULT_SUBJECT,
-                "body": t.get("body") or DEFAULT_BODY,
+                "subject": t.get("subject") or d_subject,
+                "body": t.get("body") or d_body,
             }
         self._cur_tmpl_key = self._tmpl_type.currentData()
         self._show_tmpl(self._cur_tmpl_key)

@@ -41,15 +41,12 @@ def get_default_seal(session, company):
     return seal
 
 
-# A4キュー — ORM オブジェクトはセッション跨ぎでデタッチするため ID のみ保持
-_a4_queue: list[int] = []
+def generate_and_open(issuance, session, reissue: bool = False,
+                      due_date=None, open_file: bool = True) -> str | None:
+    """発行データのPDFを生成し、open_file=True ならビューアで開く。
 
-
-def generate_and_open(issuance, session, receipt_fmt: str = "a5",
-                      reissue: bool = False, due_date=None) -> str | None:
-    """
-    receipt_fmt: "a5" → A5縦1事業所（原本+控え）
-                 "a4" → A4横2事業所キュー方式
+    一括発行時は open_file=False で生成だけ行い、
+    呼び出し元で merge_and_open() にまとめて渡す。
     """
     company, bank = get_company_and_bank(session)
     if not company:
@@ -94,87 +91,54 @@ def generate_and_open(issuance, session, receipt_fmt: str = "a5",
                              notes=proj_notes)
         issuance.pdf_path = path
         session.commit()
-        from app.services.print_service import open_pdf
-        open_pdf(path)
+        if open_file:
+            from app.services.print_service import open_pdf
+            open_pdf(path)
         return path
 
-    # 領収書
-    if receipt_fmt == "a4":
-        return _generate_a4_queued(issuance.id, session, company, seal, output_dir,
-                                   reissue=reissue)
-    else:
-        path = os.path.join(output_dir, f"{issuance.doc_number}{suffix}.pdf")
-        from app.services.pdf.receipt_pdf import generate_receipt_pdf
-        generate_receipt_pdf(issuance, company, path,
-                             seal_image=seal, reissue=reissue)
-        issuance.pdf_path = path
-        session.commit()
-        from app.services.print_service import open_pdf
-        open_pdf(path)
-        return path
-
-
-def _load_issuance(session, issuance_id: int):
-    from app.database.models import Issuance, IssuanceLine
-    from sqlalchemy.orm import joinedload
-    return (session.query(Issuance)
-            .options(joinedload(Issuance.lines))
-            .filter_by(id=issuance_id)
-            .first())
-
-
-def _generate_a4_queued(issuance_id: int, session, company, seal, output_dir,
-                        reissue: bool = False) -> str | None:
-    """1件目はIDのみキュー保持。2件目が来たら両方リロードしてA4印刷。"""
-    global _a4_queue
-    _a4_queue.append(issuance_id)
-
-    if len(_a4_queue) < 2:
-        return None   # 呼び出し元でメッセージ表示
-
-    id1, id2 = _a4_queue[0], _a4_queue[1]
-    _a4_queue = []
-
-    iss1 = _load_issuance(session, id1)
-    iss2 = _load_issuance(session, id2)
-    suffix = "_再発行" if reissue else ""
-    path = os.path.join(output_dir, f"A4_{iss1.doc_number}_{iss2.doc_number}{suffix}.pdf")
-    from app.services.pdf.receipt_pdf import generate_receipt_pdf_a4
-    generate_receipt_pdf_a4([iss1, iss2], company, path,
-                             seal_image=seal, reissue=reissue)
-    iss1.pdf_path = path
-    iss2.pdf_path = path
+    # 領収書（A5縦・原本+控え）
+    path = os.path.join(output_dir, f"{issuance.doc_number}{suffix}.pdf")
+    from app.services.pdf.receipt_pdf import generate_receipt_pdf
+    generate_receipt_pdf(issuance, company, path,
+                         seal_image=seal, reissue=reissue)
+    issuance.pdf_path = path
     session.commit()
-    from app.services.print_service import open_pdf
-    open_pdf(path)
+    if open_file:
+        from app.services.print_service import open_pdf
+        open_pdf(path)
     return path
 
 
-def flush_a4_queue(session) -> str | None:
-    """キューに1件残っている場合、単独でA4左半分に印刷して出力する。"""
-    global _a4_queue
-    if not _a4_queue:
+def merge_and_open(paths: list[str], base_name: str) -> str | None:
+    """複数PDFを1ファイルに結合して開く（連続印刷用）。
+
+    pypdf が無い環境では結合せず出力フォルダを開く。
+    返り値は結合PDFのパス（フォルダを開いた場合は None）。
+    """
+    paths = [p for p in paths if p and os.path.exists(p)]
+    if not paths:
         return None
-    issuance_id = _a4_queue[0]
-    _a4_queue = []
-
-    iss = _load_issuance(session, issuance_id)
-    from app.database.models import CompanySettings
-    company = session.query(CompanySettings).first()
-    seal = get_default_seal(session, company)
     output_dir = get_pdf_output_dir()
-    path = os.path.join(output_dir, f"A4_{iss.doc_number}.pdf")
-    from app.services.pdf.receipt_pdf import generate_receipt_pdf_a4
-    generate_receipt_pdf_a4([iss], company, path, seal_image=seal)
-    iss.pdf_path = path
-    session.commit()
     from app.services.print_service import open_pdf
-    open_pdf(path)
-    return path
-
-
-def get_a4_queue_count() -> int:
-    return len(_a4_queue)
+    try:
+        from pypdf import PdfWriter
+    except ImportError:
+        # 結合ライブラリ未導入: フォルダを開くだけにフォールバック
+        os.startfile(output_dir)
+        return None
+    from datetime import datetime
+    safe = "".join(c for c in base_name if c not in '\\/:*?"<>|')
+    merged = os.path.join(
+        output_dir,
+        f"{safe}_一括_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+    writer = PdfWriter()
+    for p in paths:
+        writer.append(p)
+    with open(merged, "wb") as f:
+        writer.write(f)
+    writer.close()
+    open_pdf(merged)
+    return merged
 
 
 def build_preview_issuance(lines_data: list[dict], doc_type: str):

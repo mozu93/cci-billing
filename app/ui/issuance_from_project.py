@@ -667,26 +667,51 @@ class IssuanceFromProjectWidget(QWidget):
 
     def _do_issue_rows(self, rows: list[tuple[int, tuple]]) -> list[str]:
         """rows = [(row_idx, (pm_id, inv_id, rcp_id)), ...] を発行して PDF 生成。
-        エラーメッセージのリストを返す。"""
+        エラーメッセージのリストを返す。
+
+        支払期限ダイアログはDB変更前に表示し、キャンセル時は何も変更しない。
+        PDF生成に失敗した行は発行済みを取り消して「準備中」に戻す。
+        """
         project_id = self._proj_combo.currentData()
         doc_type = self._doc_type
         delivery = self._delivery_combo.currentText()
-        session = get_session()
         errors = []
+
+        # ── 対象行の事前確定（DB変更前）─────────────────────────
+        targets = []
+        for row_idx, (pm_id, invoice_id, receipt_id) in rows:
+            if doc_type == "invoice" and invoice_id is None and receipt_id is not None:
+                continue  # 無効化済み
+            quantities = self._get_row_quantities(row_idx)
+            issuance_id = invoice_id if doc_type == "invoice" else receipt_id
+            if issuance_id is None and quantities and not any(quantities.values()):
+                org_item = self._table.item(row_idx, COL_ORG)
+                name = org_item.text() if org_item else f"{row_idx + 1}行目"
+                errors.append(f"{name}：数量がすべて0のためスキップしました")
+                continue
+            targets.append((pm_id, issuance_id, quantities))
+        if not targets:
+            return errors
+
+        # ── 支払期限の確認（請求書のみ・DB変更の前）──────────────
+        due_date = None
+        if doc_type == "invoice":
+            from app.ui.invoice_options_dialog import InvoiceOptionsDialog
+            from PyQt6.QtWidgets import QDialog
+            opts = InvoiceOptionsDialog(parent=self)
+            if opts.exec() != QDialog.DialogCode.Accepted:
+                return []  # キャンセル：何も変更しない
+            due_date = opts.due_date()
+
+        # ── 発行 → PDF生成（失敗時は発行を取り消す）──────────────
+        session = get_session()
         issued_issuances = []
+        pdf_paths = []
+        open_each = len(targets) == 1 and delivery != "メール送付"
         try:
             from app.database.models import ProjectMember, Issuance
-            from app.utils.pdf_helpers import generate_and_open
-            for row_idx, (pm_id, invoice_id, receipt_id) in rows:
-                if doc_type == "invoice" and invoice_id is None and receipt_id is not None:
-                    continue
-                quantities = self._get_row_quantities(row_idx)
-                issuance_id = invoice_id if doc_type == "invoice" else receipt_id
-                if issuance_id is None and quantities and not any(quantities.values()):
-                    org_item = self._table.item(row_idx, COL_ORG)
-                    name = org_item.text() if org_item else f"{row_idx + 1}行目"
-                    errors.append(f"{name}：数量がすべて0のためスキップしました")
-                    continue
+            from app.utils.pdf_helpers import generate_and_open, merge_and_open
+            for pm_id, issuance_id, quantities in targets:
                 try:
                     pm = session.get(ProjectMember, pm_id)
                     if issuance_id is None:
@@ -705,7 +730,8 @@ class IssuanceFromProjectWidget(QWidget):
                     iss = session.get(Issuance, issuance_id)
                     if iss is None:
                         continue
-                    if iss.status != "発行済み":
+                    was_issued = iss.status == "発行済み"
+                    if not was_issued:
                         mark_as_issued(session, issuance_id,
                                        staff_id=current_user.get_id(),
                                        staff_name=current_user.get_name(),
@@ -715,28 +741,35 @@ class IssuanceFromProjectWidget(QWidget):
                         # 発行済み行の再実行時も配付方法を実態に合わせる
                         iss.delivery_method = delivery
                         session.commit()
+
+                    try:
+                        path = generate_and_open(iss, session, due_date=due_date,
+                                                 open_file=open_each)
+                        if path:
+                            pdf_paths.append(path)
+                    except Exception as e:
+                        if not was_issued:
+                            # PDFが作れなかった行は発行前の状態に戻す
+                            iss.status = "準備中"
+                            iss.issued_at = None
+                            session.commit()
+                        name = (iss.recipient_organization
+                                or iss.recipient_name or iss.doc_number)
+                        errors.append(
+                            f"{name}：PDF生成に失敗したため発行を取り消しました（{e}）")
+                        continue
                     issued_issuances.append((iss, session))
-                except Exception as e:
-                    errors.append(str(e))
-
-            due_date = None
-            if doc_type == "invoice" and issued_issuances:
-                from app.ui.invoice_options_dialog import InvoiceOptionsDialog
-                from PyQt6.QtWidgets import QDialog
-                ref_iss = issued_issuances[0][0]
-                opts = InvoiceOptionsDialog(issued_at=ref_iss.issued_at, parent=self)
-                if opts.exec() != QDialog.DialogCode.Accepted:
-                    return errors
-                due_date = opts.due_date()
-
-            for iss, sess in issued_issuances:
-                try:
-                    generate_and_open(iss, sess, due_date=due_date)
                 except Exception as e:
                     errors.append(str(e))
 
             if delivery == "メール送付" and issued_issuances:
                 self._send_issue_emails(issued_issuances, errors)
+            elif len(pdf_paths) > 1:
+                # 一括発行：個別に開かず1つに結合して開く（連続印刷用）
+                try:
+                    merge_and_open(pdf_paths, self._proj_combo.currentText())
+                except Exception as e:
+                    errors.append(f"PDF結合に失敗しました：{e}")
         finally:
             session.close()
         return errors

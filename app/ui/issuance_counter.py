@@ -534,7 +534,6 @@ class IssuanceCounterWidget(QWidget):
             return
 
         doc_type = self._doc_type_str
-        fmt      = "a4" if doc_type == "invoice" else "a5"
         session  = get_session()
         try:
             if self._edit_issuance_id is not None:
@@ -572,7 +571,7 @@ class IssuanceCounterWidget(QWidget):
                 if opts.exec() != QDialog.DialogCode.Accepted:
                     return
                 due_date = opts.due_date()
-            generate_and_open(iss, session, receipt_fmt=fmt, due_date=due_date)
+            generate_and_open(iss, session, due_date=due_date)
             if self._delivery.currentText() == "メール送付":
                 from app.services.email_service import send_issuance_email
                 from app.services.operation_log_service import add_log
