@@ -2,7 +2,8 @@
 from datetime import date
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QComboBox, QLabel, QHeaderView, QDialog, QSplitter
+    QPushButton, QComboBox, QLabel, QHeaderView, QDialog, QSplitter,
+    QFileDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
@@ -18,6 +19,7 @@ from app.ui.project_member_panel import ProjectMemberPanel
 class ProjectTab(QWidget):
     def __init__(self):
         super().__init__()
+        self._export_rows: list[dict] = []
         self._build()
         self._load()
 
@@ -51,6 +53,12 @@ class ProjectTab(QWidget):
         top_row.addWidget(self._btn_close)
         top_row.addWidget(self._btn_reopen)
         top_row.addWidget(btn_rollover)
+        btn_csv = QPushButton("CSV出力")
+        btn_csv.clicked.connect(self._export_csv)
+        btn_excel = QPushButton("Excel出力")
+        btn_excel.clicked.connect(self._export_excel)
+        top_row.addWidget(btn_csv)
+        top_row.addWidget(btn_excel)
         top_row.addStretch()
 
         self._status_combo = QComboBox()
@@ -65,9 +73,9 @@ class ProjectTab(QWidget):
 
         splitter = QSplitter(Qt.Orientation.Vertical)
 
-        self._table = QTableWidget(0, 6)
+        self._table = QTableWidget(0, 8)
         self._table.setHorizontalHeaderLabels(
-            ["業務名", "件名", "全件", "請求書発行済", "領収書発行済", "未発行"])
+            ["業務名", "件名", "全件", "請求書発行済", "領収書発行済", "未発行", "総額", "入金額"])
         self._table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -86,25 +94,44 @@ class ProjectTab(QWidget):
         status = self._status_combo.currentData()
         session = get_session()
         try:
-            from app.database.models import Category
+            from app.database.models import Category, Issuance
             cat_name = {c.id: c.name for c in session.query(Category).all()}
             projects = get_projects(session, fiscal_year=year, status=status)
             self._table.setRowCount(0)
+            self._export_rows = []
             for proj in projects:
                 p = get_project_progress(session, proj.id)
+                pending = p["pending"]
+                total_amount = sum(
+                    int(iss.amount) for iss in
+                    session.query(Issuance).filter_by(project_id=proj.id).all())
+                paid_amount = sum(
+                    int(iss.amount) for iss in
+                    session.query(Issuance).filter_by(
+                        project_id=proj.id, status="支払済み").all())
                 row = self._table.rowCount()
                 self._table.insertRow(row)
-                pending = p["pending"]
                 for col, val in enumerate([
                     cat_name.get(proj.category_id, ""), proj.name,
                     str(p["total"]), str(p["invoice_issued"]),
-                    str(p["receipt_issued"]), str(pending)
+                    str(p["receipt_issued"]), str(pending),
+                    f"¥{total_amount:,}", f"¥{paid_amount:,}",
                 ]):
                     item = QTableWidgetItem(val)
                     item.setData(Qt.ItemDataRole.UserRole, proj.id)
                     if col == 5 and pending > 0:
                         item.setForeground(QColor("#DC2626"))
                     self._table.setItem(row, col, item)
+                self._export_rows.append({
+                    "業務名": cat_name.get(proj.category_id, ""),
+                    "件名": proj.name,
+                    "全件": p["total"],
+                    "請求書発行済": p["invoice_issued"],
+                    "領収書発行済": p["receipt_issued"],
+                    "未発行": pending,
+                    "総額": total_amount,
+                    "入金額": paid_amount,
+                })
         finally:
             session.close()
 
@@ -171,6 +198,35 @@ class ProjectTab(QWidget):
         finally:
             session.close()
         self._load()
+
+    def _export_csv(self):
+        if not self._export_rows:
+            QMessageBox.information(self, "情報", "データがありません。")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "CSV保存", "", "CSV (*.csv)")
+        if not path:
+            return
+        import csv
+        with open(path, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=list(self._export_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(self._export_rows)
+        QMessageBox.information(self, "完了", f"CSVを保存しました。\n{path}")
+
+    def _export_excel(self):
+        if not self._export_rows:
+            QMessageBox.information(self, "情報", "データがありません。")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Excel保存", "", "Excel (*.xlsx)")
+        if not path:
+            return
+        from app.services.report_service import export_to_excel
+        headers = list(self._export_rows[0].keys())
+        try:
+            export_to_excel(self._export_rows, headers, path)
+            QMessageBox.information(self, "完了", f"Excelを保存しました。\n{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "エラー", str(e))
 
     def _rollover(self):
         from app.ui.fiscal_year_dialog import FiscalYearDialog

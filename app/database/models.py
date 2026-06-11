@@ -160,8 +160,12 @@ class Issuance(Base):
     id = Column(Integer, primary_key=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
     project_member_id = Column(Integer, ForeignKey("project_members.id"), nullable=True)
+    member_number = Column(String(50), default="")
     recipient_organization = Column(String(200), default="")
+    recipient_kana = Column(String(200), default="")
     recipient_name = Column(String(100), default="")
+    recipient_name_kana = Column(String(100), default="")
+    recipient_phone = Column(String(50), default="")
     doc_type = Column(String(20), nullable=False)
     doc_number = Column(String(50), default="")
     status = Column(String(20), default="準備中")
@@ -203,4 +207,20 @@ class Payment(Base):
     notes = Column(String(200), default="")
     staff_id = Column(Integer, ForeignKey("staff.id"), nullable=True)
     staff_name = Column(String(100), default="")
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class Member(Base):
+    __tablename__ = "members"
+    id = Column(Integer, primary_key=True)
+    member_number = Column(String(50), default="")
+    organization_name = Column(String(200), default="")
+    organization_kana = Column(String(200), default="")
+    representative_name = Column(String(100), default="")
+    representative_kana = Column(String(100), default="")
+    phone = Column(String(50), default="")
+    email = Column(String(200), default="")
+    postal_code = Column(String(10), default="")
+    address = Column(String(300), default="")
+    address2 = Column(String(300), default="")
     created_at = Column(DateTime, default=datetime.now)

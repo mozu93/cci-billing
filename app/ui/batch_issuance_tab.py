@@ -6,13 +6,13 @@ from app.ui.payment_dialog import PaymentManagementWidget
 
 
 class BatchIssuanceTab(QWidget):
-    """まとめて発行：名簿単位の準備・一括発行・入金管理をまとめるタブ。"""
+    """まとめて発行：名簿単位の準備・一括発行・入金管理・登録済発行をまとめるタブ。"""
 
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
         inner = QTabWidget()
-        inner.addTab(ProjectTab(), "請求・領収書データ")
+        inner.addTab(ProjectTab(), "データ作成")
         inner.addTab(IssuanceFromProjectWidget("invoice"), "請求書発行")
         inner.addTab(IssuanceFromProjectWidget("receipt"), "領収書発行")
         inner.addTab(PaymentManagementWidget(), "入金管理")

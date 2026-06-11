@@ -42,7 +42,11 @@ def get_default_seal(session, company):
 
 
 def generate_and_open(issuance, session, reissue: bool = False,
-                      due_date=None, open_file: bool = True) -> str | None:
+                      due_date=None, open_file: bool = True,
+                      window_envelope: bool = False,
+                      recipient_postal_code: str = "",
+                      recipient_address: str = "",
+                      recipient_address2: str = "") -> str | None:
     """発行データのPDFを生成し、open_file=True ならビューアで開く。
 
     一括発行時は open_file=False で生成だけ行い、
@@ -54,22 +58,22 @@ def generate_and_open(issuance, session, reissue: bool = False,
     seal = get_default_seal(session, company)
     output_dir = get_pdf_output_dir()
 
-    from app.utils.app_config import get_config
-    _cfg = get_config()
-    _window_envelope = _cfg.get("window_envelope", False)
-
     suffix = "_再発行" if reissue else ""
     if issuance.doc_type == "invoice":
         path = os.path.join(output_dir, f"{issuance.doc_number}{suffix}.pdf")
         from app.services.pdf.invoice_pdf import generate_invoice_pdf
         postal_code = address = address2 = ""
-        if _window_envelope and issuance.project_member_id:
+        if window_envelope and issuance.project_member_id:
             from app.database.models import ProjectMember
             pm = session.get(ProjectMember, issuance.project_member_id)
             if pm:
                 postal_code = pm.postal_code or ""
                 address = pm.address or ""
                 address2 = pm.address2 or ""
+        elif window_envelope:
+            postal_code = recipient_postal_code
+            address = recipient_address
+            address2 = recipient_address2
         subject = ""
         proj_notes = ""
         if issuance.project_id:
@@ -82,7 +86,7 @@ def generate_and_open(issuance, session, reissue: bool = False,
                 proj_notes = proj.notes or ""
         generate_invoice_pdf(issuance, company, path, bank,
                              seal_image=seal, reissue=reissue,
-                             window_envelope=_window_envelope,
+                             window_envelope=window_envelope,
                              recipient_postal_code=postal_code,
                              recipient_address=address,
                              recipient_address2=address2,

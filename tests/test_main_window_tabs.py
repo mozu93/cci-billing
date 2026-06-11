@@ -13,8 +13,7 @@ def test_top_level_tabs_order(qtbot, memory_db):
     tabs = window.centralWidget()
     assert isinstance(tabs, QTabWidget)
     assert _tab_titles(tabs) == [
-        "窓口発行", "まとめて発行", "再発行",
-        "レポート", "設定",
+        "単発発行", "まとめて発行", "修正・再発行", "設定",
     ]
 
 
@@ -24,4 +23,4 @@ def test_default_tab_is_counter(qtbot, memory_db):
     qtbot.addWidget(window)
     tabs = window.centralWidget()
     assert tabs.currentIndex() == 0
-    assert tabs.tabText(tabs.currentIndex()) == "窓口発行"
+    assert tabs.tabText(tabs.currentIndex()) == "単発発行"

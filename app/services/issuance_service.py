@@ -206,7 +206,11 @@ def create_direct_issuance(session: Session, lines_data: list[dict],
                             doc_type: str, fiscal_year: int, month: int,
                             staff_id: int | None = None, staff_name: str = "",
                             delivery_method: str = "窓口手渡し",
-                            project_name: str = "直接発行") -> Issuance:
+                            project_name: str = "直接発行",
+                            member_number: str = "",
+                            recipient_kana: str = "",
+                            recipient_name_kana: str = "",
+                            recipient_phone: str = "") -> Issuance:
     from app.database.models import Project
     sys_proj = (session.query(Project)
                 .filter_by(name=project_name, project_type="counter")
@@ -228,8 +232,12 @@ def create_direct_issuance(session: Session, lines_data: list[dict],
     issuance = Issuance(
         project_id=sys_proj.id,
         project_member_id=None,
+        member_number=member_number,
         recipient_organization=recipient_organization,
+        recipient_kana=recipient_kana,
         recipient_name=recipient_name,
+        recipient_name_kana=recipient_name_kana,
+        recipient_phone=recipient_phone,
         doc_type=doc_type,
         doc_number=doc_number,
         status="支払済み" if is_receipt else "発行済み",
@@ -271,7 +279,11 @@ def update_direct_issuance(session: Session, issuance_id: int,
                             recipient_organization: str, recipient_name: str,
                             delivery_method: str,
                             staff_id: int | None = None,
-                            staff_name: str = "") -> Issuance:
+                            staff_name: str = "",
+                            member_number: str = "",
+                            recipient_kana: str = "",
+                            recipient_name_kana: str = "",
+                            recipient_phone: str = "") -> Issuance:
     issuance = session.get(Issuance, issuance_id)
     if issuance is None:
         raise ValueError("発行データが見つかりません。")
@@ -279,8 +291,12 @@ def update_direct_issuance(session: Session, issuance_id: int,
         session.delete(line)
     session.flush()
     total = sum(int(l["unit_price"]) * int(l["quantity"]) for l in lines_data)
+    issuance.member_number = member_number
     issuance.recipient_organization = recipient_organization
+    issuance.recipient_kana = recipient_kana
     issuance.recipient_name = recipient_name
+    issuance.recipient_name_kana = recipient_name_kana
+    issuance.recipient_phone = recipient_phone
     issuance.delivery_method = delivery_method
     issuance.amount = total
     if staff_id is not None:

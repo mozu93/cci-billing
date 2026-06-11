@@ -3,7 +3,7 @@ import calendar
 from datetime import date
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QHBoxLayout,
-    QDateEdit, QPushButton, QLabel
+    QDateEdit, QPushButton, QLabel, QCheckBox
 )
 from PyQt6.QtCore import QDate
 
@@ -18,23 +18,29 @@ def _next_month_end(from_date=None) -> date:
 
 
 class InvoiceOptionsDialog(QDialog):
-    """請求書PDF生成前に支払期限を確認・変更するダイアログ。"""
+    """請求書PDF生成前に支払期限と出力オプションを確認するダイアログ。"""
 
     def __init__(self, issued_at=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("支払期限の確認")
-        self.setFixedSize(300, 130)
+        self.setWindowTitle("請求書の発行オプション")
+        self.setFixedSize(320, 160)
+
+        from app.utils.app_config import get_config
+        _cfg = get_config()
 
         default = _next_month_end(issued_at)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("支払期限を確認・変更してください。"))
 
         form = QFormLayout()
         self._due = QDateEdit(QDate(default.year, default.month, default.day))
         self._due.setCalendarPopup(True)
         self._due.setDisplayFormat("yyyy/MM/dd")
         form.addRow("支払期限", self._due)
+
+        self._window_envelope = QCheckBox("窓あき封筒モード（宛先に住所を印字する）")
+        self._window_envelope.setChecked(_cfg.get("window_envelope_last", False))
+        form.addRow(self._window_envelope)
         layout.addLayout(form)
 
         btn_row = QHBoxLayout()
@@ -50,3 +56,11 @@ class InvoiceOptionsDialog(QDialog):
     def due_date(self) -> date:
         qd = self._due.date()
         return date(qd.year(), qd.month(), qd.day())
+
+    def window_envelope(self) -> bool:
+        checked = self._window_envelope.isChecked()
+        from app.utils.app_config import get_config, save_config
+        cfg = get_config()
+        cfg["window_envelope_last"] = checked
+        save_config(cfg)
+        return checked

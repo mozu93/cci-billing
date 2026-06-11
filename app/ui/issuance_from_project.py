@@ -1,11 +1,12 @@
 # app/ui/issuance_from_project.py
+import calendar
 from datetime import date
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QHeaderView, QComboBox, QLineEdit, QMessageBox,
-    QSpinBox, QFileDialog, QProgressDialog
+    QSpinBox, QFileDialog, QProgressDialog, QCheckBox, QDateEdit
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QDate
 from app.database.connection import get_session
 from app.services.project_service import (
     get_projects, get_project_members, get_project_templates
@@ -164,6 +165,23 @@ class IssuanceFromProjectWidget(QWidget):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
+        if self._doc_type == "invoice":
+            opts_row = QHBoxLayout()
+            today = date.today()
+            nm_year = today.year + 1 if today.month == 12 else today.year
+            nm_month = 1 if today.month == 12 else today.month + 1
+            last_day = calendar.monthrange(nm_year, nm_month)[1]
+            self._due_date = QDateEdit(QDate(nm_year, nm_month, last_day))
+            self._due_date.setCalendarPopup(True)
+            self._due_date.setDisplayFormat("yyyy/MM/dd")
+            self._window_envelope_chk = QCheckBox("窓あき封筒モード")
+            opts_row.addWidget(QLabel("支払期日："))
+            opts_row.addWidget(self._due_date)
+            opts_row.addSpacing(16)
+            opts_row.addWidget(self._window_envelope_chk)
+            opts_row.addStretch()
+            layout.addLayout(opts_row)
+
         self._table = _CheckableTable(0, 7)
         hdr_item = QTableWidgetItem()
         hdr_item.setCheckState(Qt.CheckState.Unchecked)
@@ -293,6 +311,7 @@ class IssuanceFromProjectWidget(QWidget):
         current_id = self._proj_combo.currentData()
         self._proj_combo.blockSignals(True)
         self._proj_combo.clear()
+        self._proj_combo.addItem("すべて", None)
         for p in self._all_projects:
             if sel_year is not None and p.fiscal_year != sel_year:
                 continue
@@ -693,15 +712,13 @@ class IssuanceFromProjectWidget(QWidget):
         if not targets:
             return errors
 
-        # ── 支払期限の確認（請求書のみ・DB変更の前）──────────────
+        # ── 支払期限・封筒オプション（請求書のみ）────────────────
         due_date = None
+        window_envelope = False
         if doc_type == "invoice":
-            from app.ui.invoice_options_dialog import InvoiceOptionsDialog
-            from PyQt6.QtWidgets import QDialog
-            opts = InvoiceOptionsDialog(parent=self)
-            if opts.exec() != QDialog.DialogCode.Accepted:
-                return []  # キャンセル：何も変更しない
-            due_date = opts.due_date()
+            qd = self._due_date.date()
+            due_date = date(qd.year(), qd.month(), qd.day())
+            window_envelope = self._window_envelope_chk.isChecked()
 
         # ── 発行 → PDF生成（失敗時は発行を取り消す）──────────────
         session = get_session()
@@ -737,6 +754,10 @@ class IssuanceFromProjectWidget(QWidget):
                                        staff_name=current_user.get_name(),
                                        delivery_method=delivery)
                         iss = session.get(Issuance, issuance_id)
+                        from app.services.operation_log_service import add_log
+                        _lbl = "請求書" if doc_type == "invoice" else "領収書"
+                        add_log(session, "発行", "issuance", issuance_id,
+                                f"{_lbl} {iss.doc_number} 宛先：{iss.recipient_organization or iss.recipient_name}")
                     elif (iss.delivery_method or "") != delivery:
                         # 発行済み行の再実行時も配付方法を実態に合わせる
                         iss.delivery_method = delivery
@@ -744,7 +765,8 @@ class IssuanceFromProjectWidget(QWidget):
 
                     try:
                         path = generate_and_open(iss, session, due_date=due_date,
-                                                 open_file=open_each)
+                                                 open_file=open_each,
+                                                 window_envelope=window_envelope)
                         if path:
                             pdf_paths.append(path)
                     except Exception as e:

@@ -188,9 +188,13 @@ class ReissueWidget(QWidget):
 
         session = get_session()
         try:
+            from sqlalchemy import or_
             q = (session.query(Issuance, Project)
                  .join(Project, Issuance.project_id == Project.id)
-                 .filter(Issuance.status.in_(["発行済み", "支払済み"])))
+                 .filter(or_(
+                     Issuance.doc_type == "receipt",
+                     Issuance.status == "発行済み",
+                 )))
             if year:
                 q = q.filter(Project.fiscal_year == year)
             if proj_id:
@@ -257,8 +261,7 @@ class ReissueWidget(QWidget):
         item = self._table.item(row, COL_NUM)
         proj_type = item.data(Qt.ItemDataRole.UserRole + 1) if item else None
         status    = item.data(Qt.ItemDataRole.UserRole + 2) if item else None
-        # counter プロジェクトかつ未払い（発行済み）の場合のみ編集可
-        self._btn_edit.setEnabled(proj_type == "counter" and status == "発行済み")
+        self._btn_edit.setEnabled(status == "発行済み")
 
     # ── 内容修正 ─────────────────────────────────────────────────────
 
@@ -307,6 +310,7 @@ class ReissueWidget(QWidget):
                 QMessageBox.critical(self, "エラー", "発行データが見つかりません。")
                 return
             from app.utils.pdf_helpers import generate_and_open
+            from app.services.operation_log_service import add_log
             due_date = None
             if iss.doc_type == "invoice":
                 from app.ui.invoice_options_dialog import InvoiceOptionsDialog
@@ -316,6 +320,9 @@ class ReissueWidget(QWidget):
                     return
                 due_date = opts.due_date()
             generate_and_open(iss, session, reissue=True, due_date=due_date)
+            _lbl = "請求書" if iss.doc_type == "invoice" else "領収書"
+            add_log(session, "再発行", "issuance", iss.id,
+                    f"{_lbl} {iss.doc_number} 宛先：{iss.recipient_organization or iss.recipient_name}")
         except Exception as e:
             QMessageBox.critical(self, "再発行エラー", str(e))
         finally:

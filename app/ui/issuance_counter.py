@@ -1,11 +1,13 @@
 # app/ui/issuance_counter.py
+import calendar
 from datetime import date
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout, QGroupBox,
     QLineEdit, QSpinBox, QComboBox, QLabel, QPushButton,
-    QMessageBox, QFrame, QScrollArea, QStyleFactory, QDialog
+    QMessageBox, QFrame, QScrollArea, QStyleFactory, QDialog,
+    QCheckBox, QDateEdit, QCompleter
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QDate, QTimer, QThread
 from PyQt6.QtGui import QIntValidator
 from app.database.connection import get_session
 from app.services.category_service import get_active_categories
@@ -113,6 +115,30 @@ class _LineRow(QFrame):
             return 0
 
 
+class _PostalWorker(QThread):
+    """郵便番号 → 住所変換（zipcloud API）"""
+    found = pyqtSignal(str)
+
+    def __init__(self, zipcode: str):
+        super().__init__()
+        self._zipcode = zipcode
+
+    def run(self):
+        try:
+            import urllib.request, json
+            url = (f"https://zipcloud.ibsnet.co.jp/api/search"
+                   f"?zipcode={self._zipcode}")
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                data = json.loads(resp.read())
+            results = data.get("results")
+            if results:
+                r = results[0]
+                addr = r.get("address1", "") + r.get("address2", "") + r.get("address3", "")
+                self.found.emit(addr)
+        except Exception:
+            pass
+
+
 class IssuanceCounterWidget(QWidget):
     edit_completed = pyqtSignal()
 
@@ -126,6 +152,8 @@ class IssuanceCounterWidget(QWidget):
         self._cat_name_by_id: dict[int, str] = {}
         self._rows: list[_LineRow] = []
         self._cell_style = QStyleFactory.create("Fusion")
+        self._postal_worker: _PostalWorker | None = None
+        self._members: list = []
         self._build()
 
     def showEvent(self, event):
@@ -138,16 +166,19 @@ class IssuanceCounterWidget(QWidget):
     # ── マスタ読み込み ───────────────────────────────────
 
     def _reload_master(self):
+        from app.services.member_service import get_all_members
         session = get_session()
         try:
             self._categories = get_active_categories(session)
             self._templates  = get_all_active_templates(session)
+            self._members    = get_all_members(session)
         finally:
             session.close()
         self._cat_name_by_id = {c.id: c.name for c in self._categories}
         for row in self._rows:
             self._refresh_cat_combo(row.cat_combo)
             self._refresh_tmpl_combo(row)
+        self._setup_completers()
 
     def _load_edit_data(self):
         """編集モード：既存の Issuance からフォームを復元する。"""
@@ -162,8 +193,12 @@ class IssuanceCounterWidget(QWidget):
                    .first())
             if iss is None:
                 return
+            self._member_number_edit.setText(iss.member_number or "")
             self._org_name.setText(iss.recipient_organization or "")
-            self._rep_name.setText(iss.recipient_name or "")
+            self._kana_edit.setText(iss.recipient_kana or "")
+            self._rep_name_edit.setText(iss.recipient_name or "")
+            self._rep_kana_edit.setText(iss.recipient_name_kana or "")
+            self._phone_edit.setText(iss.recipient_phone or "")
             idx = self._delivery.findText(iss.delivery_method or "")
             if idx >= 0:
                 self._delivery.setCurrentIndex(idx)
@@ -261,18 +296,56 @@ class IssuanceCounterWidget(QWidget):
         top_row.setSpacing(12)
 
         grp_dest = QGroupBox("宛先")
-        form = QFormLayout(grp_dest)
-        form.setContentsMargins(10, 8, 10, 8)
-        form.setSpacing(8)
+        dest_vbox = QVBoxLayout(grp_dest)
+        dest_vbox.setContentsMargins(10, 8, 10, 8)
+        dest_vbox.setSpacing(4)
+
+        self._member_number_edit = QLineEdit()
         self._org_name = QLineEdit()
-        self._org_name.setPlaceholderText("事業所名（任意）")
-        self._rep_name = QLineEdit()
-        self._rep_name.setPlaceholderText("代表者名・個人名（どちらか必須）")
+        self._org_name.setPlaceholderText("必須")
+        self._kana_edit = QLineEdit()
+        self._kana_edit.setPlaceholderText("フリガナ")
+        self._rep_name_edit = QLineEdit()
+        self._rep_name_edit.setPlaceholderText("氏名")
+        self._rep_kana_edit = QLineEdit()
+        self._rep_kana_edit.setPlaceholderText("氏名フリガナ")
+        self._phone_edit = QLineEdit()
+        self._phone_edit.setPlaceholderText("000-0000-0000")
         self._email = QLineEdit()
         self._email.setPlaceholderText("メール送付の場合に入力")
-        form.addRow("事業所名",     self._org_name)
-        form.addRow("担当者・個人名", self._rep_name)
-        form.addRow("メールアドレス", self._email)
+
+        def _lbl(text):
+            l = QLabel(text)
+            l.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            return l
+
+        grid = QGridLayout()
+        grid.setSpacing(6)
+        grid.setColumnMinimumWidth(0, 72)
+        grid.setColumnMinimumWidth(2, 80)
+        grid.setColumnStretch(1, 3)
+        grid.setColumnStretch(3, 2)
+
+        grid.addWidget(_lbl("会員番号"),   0, 0)
+        grid.addWidget(self._member_number_edit, 0, 1)
+        grid.addWidget(_lbl("電話番号"),   0, 2)
+        grid.addWidget(self._phone_edit,   0, 3)
+
+        grid.addWidget(_lbl("事業所名"),   1, 0)
+        grid.addWidget(self._org_name,     1, 1, 1, 3)
+
+        grid.addWidget(_lbl("フリガナ"),   2, 0)
+        grid.addWidget(self._kana_edit,    2, 1, 1, 3)
+
+        grid.addWidget(_lbl("氏名"),       3, 0)
+        grid.addWidget(self._rep_name_edit, 3, 1)
+        grid.addWidget(_lbl("氏名フリガナ"), 3, 2)
+        grid.addWidget(self._rep_kana_edit, 3, 3)
+
+        grid.addWidget(_lbl("メール"),     4, 0)
+        grid.addWidget(self._email,        4, 1, 1, 3)
+
+        dest_vbox.addLayout(grid)
         top_row.addWidget(grp_dest, 6)
 
         grp_opts = QGroupBox("発行設定")
@@ -282,11 +355,43 @@ class IssuanceCounterWidget(QWidget):
         self._delivery = QComboBox()
         self._delivery.addItems(["窓口手渡し", "郵送", "メール送付", "その他"])
         opts_form.addRow("配付方法", self._delivery)
-        fmt_text = "A4縦" if self._doc_type_str == "invoice" else "A5縦"
-        fmt_note = QLabel(f"印刷形式：{fmt_text}（固定）")
-        fmt_note.setStyleSheet("color: #666; font-size: 11px;")
-        opts_form.addRow("", fmt_note)
-        top_row.addWidget(grp_opts, 4)
+        if self._doc_type_str == "invoice":
+            y, m = (date.today().year, date.today().month + 1) if date.today().month < 12 else (date.today().year + 1, 1)
+            default_due = date(y, m, calendar.monthrange(y, m)[1])
+            self._due_date = QDateEdit(QDate(default_due.year, default_due.month, default_due.day))
+            self._due_date.setCalendarPopup(True)
+            self._due_date.setDisplayFormat("yyyy/MM/dd")
+            opts_form.addRow("支払期日", self._due_date)
+            self._window_envelope_chk = QCheckBox("窓あき封筒モード（住所を印字）")
+            opts_form.addRow(self._window_envelope_chk)
+
+            self._addr_widget = QWidget()
+            addr_form = QFormLayout(self._addr_widget)
+            addr_form.setContentsMargins(0, 4, 0, 0)
+            addr_form.setSpacing(6)
+            self._postal_code_edit = QLineEdit()
+            self._postal_code_edit.setPlaceholderText("例：1234567")
+            self._address1_edit = QLineEdit()
+            self._address1_edit.setPlaceholderText("都道府県・市区町村・番地（自動入力）")
+            self._address2_edit = QLineEdit()
+            self._address2_edit.setPlaceholderText("建物名・部屋番号（任意）")
+            addr_form.addRow("郵便番号", self._postal_code_edit)
+            addr_form.addRow("住所",     self._address1_edit)
+            addr_form.addRow("住所2",    self._address2_edit)
+            self._addr_widget.setVisible(False)
+            self._window_envelope_chk.toggled.connect(self._addr_widget.setVisible)
+            opts_form.addRow(self._addr_widget)
+
+            self._postal_timer = QTimer(self)
+            self._postal_timer.setSingleShot(True)
+            self._postal_timer.timeout.connect(self._do_postal_lookup)
+            self._postal_code_edit.textChanged.connect(
+                lambda: self._postal_timer.start(600))
+        else:
+            fmt_note = QLabel("印刷形式：A5縦（固定）")
+            fmt_note.setStyleSheet("color: #666; font-size: 11px;")
+            opts_form.addRow("", fmt_note)
+        top_row.addWidget(grp_opts, 3)
 
         layout.addLayout(top_row)
 
@@ -457,6 +562,64 @@ class IssuanceCounterWidget(QWidget):
             row.sub_label.setText(f"¥{sub:,}")
         self._total_label.setText(f"合計：¥{total:,}")
 
+    # ── 会員マスタ補完 ───────────────────────────────────
+
+    def _setup_completers(self):
+        org_names = [m.organization_name for m in self._members if m.organization_name]
+        org_c = QCompleter(org_names, self)
+        org_c.setFilterMode(Qt.MatchFlag.MatchContains)
+        org_c.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        org_c.activated.connect(self._on_org_selected)
+        self._org_name.setCompleter(org_c)
+
+        nums = [m.member_number for m in self._members if m.member_number]
+        num_c = QCompleter(nums, self)
+        num_c.setFilterMode(Qt.MatchFlag.MatchContains)
+        num_c.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        num_c.activated.connect(self._on_num_selected)
+        self._member_number_edit.setCompleter(num_c)
+
+    def _on_org_selected(self, text: str):
+        member = next((m for m in self._members
+                       if m.organization_name == text), None)
+        if member:
+            self._fill_from_member(member)
+
+    def _on_num_selected(self, text: str):
+        member = next((m for m in self._members
+                       if m.member_number == text), None)
+        if member:
+            self._fill_from_member(member)
+
+    def _fill_from_member(self, member):
+        self._member_number_edit.setText(member.member_number or "")
+        self._org_name.setText(member.organization_name or "")
+        self._kana_edit.setText(member.organization_kana or "")
+        self._rep_name_edit.setText(member.representative_name or "")
+        self._rep_kana_edit.setText(member.representative_kana or "")
+        self._phone_edit.setText(member.phone or "")
+        self._email.setText(member.email or "")
+        if self._doc_type_str == "invoice":
+            self._postal_code_edit.blockSignals(True)
+            self._postal_code_edit.setText(member.postal_code or "")
+            self._postal_code_edit.blockSignals(False)
+            self._address1_edit.setText(member.address or "")
+            self._address2_edit.setText(member.address2 or "")
+
+    # ── 郵便番号検索 ─────────────────────────────────────
+
+    def _do_postal_lookup(self):
+        if self._doc_type_str != "invoice":
+            return
+        zipcode = (self._postal_code_edit.text().strip()
+                   .replace("-", "").replace("ー", "").replace("−", ""))
+        if len(zipcode) == 7 and zipcode.isdigit():
+            if self._postal_worker and self._postal_worker.isRunning():
+                self._postal_worker.quit()
+            self._postal_worker = _PostalWorker(zipcode)
+            self._postal_worker.found.connect(self._address1_edit.setText)
+            self._postal_worker.start()
+
     # ── 発行 ─────────────────────────────────────────────
 
     def _derive_project_name(self) -> str:
@@ -478,11 +641,14 @@ class IssuanceCounterWidget(QWidget):
 
     def _issue(self):
         org = self._org_name.text().strip()
-        rep = self._rep_name.text().strip()
-        if not org and not rep:
-            QMessageBox.warning(self, "入力エラー",
-                                "事業所名または担当者・個人名を入力してください。")
+        if not org:
+            QMessageBox.warning(self, "入力エラー", "事業所名を入力してください。")
             return
+        member_no  = self._member_number_edit.text().strip()
+        kana       = self._kana_edit.text().strip()
+        rep        = self._rep_name_edit.text().strip()
+        rep_kana   = self._rep_kana_edit.text().strip()
+        phone      = self._phone_edit.text().strip()
         email = self._email.text().strip()
         if self._delivery.currentText() == "メール送付":
             if not email:
@@ -536,6 +702,8 @@ class IssuanceCounterWidget(QWidget):
         doc_type = self._doc_type_str
         session  = get_session()
         try:
+            from app.services.operation_log_service import add_log as _add_log
+            label = "請求書" if doc_type == "invoice" else "領収書"
             if self._edit_issuance_id is not None:
                 iss = update_direct_issuance(
                     session,
@@ -546,7 +714,13 @@ class IssuanceCounterWidget(QWidget):
                     delivery_method        = self._delivery.currentText(),
                     staff_id               = current_user.get_id(),
                     staff_name             = current_user.get_name(),
+                    member_number          = member_no,
+                    recipient_kana         = kana,
+                    recipient_name_kana    = rep_kana,
+                    recipient_phone        = phone,
                 )
+                _add_log(session, "内容修正", "issuance", iss.id,
+                         f"{label} {iss.doc_number} 宛先：{iss.recipient_organization or iss.recipient_name}")
             else:
                 project_name = self._derive_project_name()
                 today = date.today()
@@ -562,16 +736,30 @@ class IssuanceCounterWidget(QWidget):
                     staff_name             = current_user.get_name(),
                     delivery_method        = self._delivery.currentText(),
                     project_name           = project_name,
+                    member_number          = member_no,
+                    recipient_kana         = kana,
+                    recipient_name_kana    = rep_kana,
+                    recipient_phone        = phone,
                 )
+                _add_log(session, "発行", "issuance", iss.id,
+                         f"{label} {iss.doc_number} 宛先：{iss.recipient_organization or iss.recipient_name}")
             from app.utils.pdf_helpers import generate_and_open
             due_date = None
+            window_envelope = False
+            postal_code = address1 = address2 = ""
             if doc_type == "invoice":
-                from app.ui.invoice_options_dialog import InvoiceOptionsDialog
-                opts = InvoiceOptionsDialog(issued_at=iss.issued_at, parent=self)
-                if opts.exec() != QDialog.DialogCode.Accepted:
-                    return
-                due_date = opts.due_date()
-            generate_and_open(iss, session, due_date=due_date)
+                qd = self._due_date.date()
+                due_date = date(qd.year(), qd.month(), qd.day())
+                window_envelope = self._window_envelope_chk.isChecked()
+                if window_envelope:
+                    postal_code = self._postal_code_edit.text().strip()
+                    address1    = self._address1_edit.text().strip()
+                    address2    = self._address2_edit.text().strip()
+            generate_and_open(iss, session, due_date=due_date,
+                              window_envelope=window_envelope,
+                              recipient_postal_code=postal_code,
+                              recipient_address=address1,
+                              recipient_address2=address2)
             if self._delivery.currentText() == "メール送付":
                 from app.services.email_service import send_issuance_email
                 from app.services.operation_log_service import add_log
@@ -595,9 +783,17 @@ class IssuanceCounterWidget(QWidget):
         if self._edit_issuance_id is not None:
             self.edit_completed.emit()
         else:
+            self._member_number_edit.clear()
             self._org_name.clear()
-            self._rep_name.clear()
+            self._kana_edit.clear()
+            self._rep_name_edit.clear()
+            self._rep_kana_edit.clear()
+            self._phone_edit.clear()
             self._email.clear()
+            if self._doc_type_str == "invoice":
+                self._postal_code_edit.clear()
+                self._address1_edit.clear()
+                self._address2_edit.clear()
             for row in list(self._rows):
                 self._remove_row(row)
             self._add_row()

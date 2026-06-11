@@ -37,6 +37,17 @@ def _migrate(engine):
                 "ALTER TABLE project_members ADD COLUMN address2 VARCHAR(300) DEFAULT ''"))
             conn.commit()
 
+        iss_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(issuances)"))}
+        for col, ddl in [
+            ("member_number",       "VARCHAR(50) DEFAULT ''"),
+            ("recipient_kana",      "VARCHAR(200) DEFAULT ''"),
+            ("recipient_name_kana", "VARCHAR(100) DEFAULT ''"),
+            ("recipient_phone",     "VARCHAR(50) DEFAULT ''"),
+        ]:
+            if col not in iss_cols:
+                conn.execute(text(f"ALTER TABLE issuances ADD COLUMN {col} {ddl}"))
+                conn.commit()
+
 
 def init_db(url: str | None = None):
     global _SessionFactory

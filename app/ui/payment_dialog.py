@@ -148,6 +148,7 @@ class PaymentManagementWidget(QWidget):
         finally:
             session.close()
         self._proj_combo.clear()
+        self._proj_combo.addItem("すべて", None)
         for p in projects:
             self._proj_combo.addItem(p.name, p.id)
         self._load()
@@ -231,6 +232,7 @@ class PaymentManagementWidget(QWidget):
         session = get_session()
         try:
             from app.database.models import Issuance
+            from app.services.operation_log_service import add_log
             for iss_id in ids:
                 iss = session.get(Issuance, iss_id)
                 if iss and iss.status != "支払済み":
@@ -244,6 +246,8 @@ class PaymentManagementWidget(QWidget):
                         staff_name=current_user.get_name(),
                         notes=v["notes"],
                     )
+                    add_log(session, "入金記録", "issuance", iss_id,
+                            f"{iss.doc_number} ¥{int(iss.amount):,} {v['payment_method']}")
         finally:
             session.close()
         self._load()
@@ -536,6 +540,11 @@ class PaymentDialog(QDialog):
                 staff_name=current_user.get_name(),
                 notes=v["notes"],
             )
+            from app.database.models import Issuance
+            from app.services.operation_log_service import add_log
+            iss = session.get(Issuance, self._issuance_id)
+            add_log(session, "入金記録", "issuance", self._issuance_id,
+                    f"{iss.doc_number if iss else ''} ¥{v['amount']:,} {v['payment_method']}")
         finally:
             session.close()
         self.accept()

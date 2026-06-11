@@ -16,16 +16,13 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
 
         from app.ui.counter_issuance_tab import CounterIssuanceTab
-        tabs.addTab(CounterIssuanceTab(), "窓口発行")
+        tabs.addTab(CounterIssuanceTab(), "単発発行")
 
         from app.ui.batch_issuance_tab import BatchIssuanceTab
         tabs.addTab(BatchIssuanceTab(), "まとめて発行")
 
         from app.ui.reissue_tab import ReissueWidget
-        tabs.addTab(ReissueWidget(), "再発行")
-
-        from app.ui.report_tab import ReportTab
-        tabs.addTab(ReportTab(), "レポート")
+        tabs.addTab(ReissueWidget(), "修正・再発行")
 
         from app.ui.settings_tab import SettingsTab
         tabs.addTab(SettingsTab(), "設定")

@@ -60,14 +60,6 @@ class CompanySettingsWidget(QWidget):
         form.addRow("インボイス登録番号", self._t_number)
         left.addWidget(grp)
 
-        pdf_grp = QGroupBox("PDF出力設定")
-        pdf_form = QFormLayout(pdf_grp)
-        pdf_form.setSpacing(6)
-        self._window_envelope_chk = QCheckBox("窓あき封筒モード（宛先に住所を印字する）")
-        self._window_envelope_chk.stateChanged.connect(self._save_pdf_options)
-        pdf_form.addRow(self._window_envelope_chk)
-        left.addWidget(pdf_grp)
-
         btn_save = QPushButton("発行元情報を保存")
         btn_save.setFixedHeight(34)
         btn_save.clicked.connect(self._save)
@@ -149,10 +141,6 @@ class CompanySettingsWidget(QWidget):
     def _load(self):
         from app.utils.app_config import get_config
         _cfg = get_config()
-        self._window_envelope_chk.blockSignals(True)
-        self._window_envelope_chk.setChecked(_cfg.get("window_envelope", False))
-        self._window_envelope_chk.blockSignals(False)
-
         session = get_session()
         try:
             cs = _get_or_create_settings(session)
@@ -213,12 +201,6 @@ class CompanySettingsWidget(QWidget):
             session.commit()
         finally:
             session.close()
-
-    def _save_pdf_options(self):
-        from app.utils.app_config import get_config, save_config
-        cfg = get_config()
-        cfg["window_envelope"] = self._window_envelope_chk.isChecked()
-        save_config(cfg)
 
     def _add_seal(self):
         path, _ = QFileDialog.getOpenFileName(
