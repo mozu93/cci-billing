@@ -40,6 +40,8 @@ def _build_lines_from_project(session: Session, project_id: int,
         tmpl = pt.item_template
         price = int(pt.unit_price_override or tmpl.unit_price)
         qty = (quantities or {}).get(tmpl.id, default_quantity)
+        if qty <= 0:
+            continue  # 数量0の項目は明細に含めない
         line_total = price * qty
         total += line_total
         lines.append({

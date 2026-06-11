@@ -268,8 +268,11 @@ class IssuanceCounterWidget(QWidget):
         self._org_name.setPlaceholderText("事業所名（任意）")
         self._rep_name = QLineEdit()
         self._rep_name.setPlaceholderText("代表者名・個人名（どちらか必須）")
+        self._email = QLineEdit()
+        self._email.setPlaceholderText("メール送付の場合に入力")
         form.addRow("事業所名",     self._org_name)
         form.addRow("担当者・個人名", self._rep_name)
+        form.addRow("メールアドレス", self._email)
         top_row.addWidget(grp_dest, 6)
 
         grp_opts = QGroupBox("発行設定")
@@ -480,6 +483,19 @@ class IssuanceCounterWidget(QWidget):
             QMessageBox.warning(self, "入力エラー",
                                 "事業所名または担当者・個人名を入力してください。")
             return
+        email = self._email.text().strip()
+        if self._delivery.currentText() == "メール送付":
+            if not email:
+                QMessageBox.warning(self, "入力エラー",
+                                    "配付方法が「メール送付」の場合は"
+                                    "メールアドレスを入力してください。")
+                return
+            from app.services.email_service import validate_email_addr
+            try:
+                email = validate_email_addr(email)
+            except ValueError as e:
+                QMessageBox.warning(self, "入力エラー", str(e))
+                return
         if not self._rows:
             QMessageBox.warning(self, "入力エラー", "項目を1つ以上追加してください。")
             return
@@ -557,6 +573,20 @@ class IssuanceCounterWidget(QWidget):
                     return
                 due_date = opts.due_date()
             generate_and_open(iss, session, receipt_fmt=fmt, due_date=due_date)
+            if self._delivery.currentText() == "メール送付":
+                from app.services.email_service import send_issuance_email
+                from app.services.operation_log_service import add_log
+                try:
+                    send_issuance_email(session, iss, to_addr=email)
+                    add_log(session, "メール送信", "issuance", iss.id,
+                            f"{iss.doc_number} → {email}")
+                    QMessageBox.information(
+                        self, "メール送信",
+                        f"{email} にメールを送信しました。")
+                except Exception as e:
+                    add_log(session, "メール送信失敗", "issuance", iss.id,
+                            f"{iss.doc_number}：{e}")
+                    QMessageBox.critical(self, "メール送信エラー", str(e))
         except Exception as e:
             QMessageBox.critical(self, "発行エラー", str(e))
             return
@@ -568,6 +598,7 @@ class IssuanceCounterWidget(QWidget):
         else:
             self._org_name.clear()
             self._rep_name.clear()
+            self._email.clear()
             for row in list(self._rows):
                 self._remove_row(row)
             self._add_row()

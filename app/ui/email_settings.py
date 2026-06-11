@@ -1,9 +1,13 @@
 # app/ui/email_settings.py
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QFormLayout, QHBoxLayout,
-    QLineEdit, QSpinBox, QCheckBox, QPushButton, QGroupBox, QMessageBox
+    QWidget, QVBoxLayout, QFormLayout, QHBoxLayout, QLabel,
+    QLineEdit, QSpinBox, QCheckBox, QComboBox, QTextEdit,
+    QPushButton, QGroupBox, QMessageBox
 )
 from app.utils.app_config import get_config, save_config
+from app.services.email_service import (
+    DEFAULT_SUBJECT, DEFAULT_BODY, PLACEHOLDER_KEYS
+)
 
 
 class EmailSettingsWidget(QWidget):
@@ -38,6 +42,30 @@ class EmailSettingsWidget(QWidget):
         form.addRow("", self._use_tls)
         form.addRow("テスト送信先", self._test_addr)
         layout.addWidget(grp)
+
+        grp_t = QGroupBox("送信メールテンプレート")
+        tform = QFormLayout(grp_t)
+        self._tmpl_type = QComboBox()
+        self._tmpl_type.addItem("請求書", "invoice")
+        self._tmpl_type.addItem("領収書", "receipt")
+        self._tmpl_type.currentIndexChanged.connect(self._on_tmpl_type_changed)
+        self._tmpl_subject = QLineEdit()
+        self._tmpl_body = QTextEdit()
+        self._tmpl_body.setAcceptRichText(False)
+        self._tmpl_body.setMinimumHeight(150)
+        help_lbl = QLabel(
+            "差し込みタグ："
+            + "　".join("{" + k + "}" for k in PLACEHOLDER_KEYS)
+            + "\n発行時に各宛先の情報に置き換えられます。"
+        )
+        help_lbl.setWordWrap(True)
+        help_lbl.setStyleSheet("color: #666; font-size: 11px;")
+        tform.addRow("対象書類", self._tmpl_type)
+        tform.addRow("件名", self._tmpl_subject)
+        tform.addRow("本文", self._tmpl_body)
+        tform.addRow("", help_lbl)
+        layout.addWidget(grp_t)
+
         btn_row = QHBoxLayout()
         btn_save = QPushButton("設定を保存")
         btn_save.clicked.connect(self._save)
@@ -59,6 +87,32 @@ class EmailSettingsWidget(QWidget):
         self._use_tls.setChecked(smtp.get("use_tls", True))
         self._test_addr.setText(smtp.get("test_addr", ""))
 
+        saved = get_config().get("email_templates", {})
+        self._tmpl_data = {}
+        for key in ("invoice", "receipt"):
+            t = saved.get(key, {})
+            self._tmpl_data[key] = {
+                "subject": t.get("subject") or DEFAULT_SUBJECT,
+                "body": t.get("body") or DEFAULT_BODY,
+            }
+        self._cur_tmpl_key = self._tmpl_type.currentData()
+        self._show_tmpl(self._cur_tmpl_key)
+
+    def _show_tmpl(self, key: str):
+        self._tmpl_subject.setText(self._tmpl_data[key]["subject"])
+        self._tmpl_body.setPlainText(self._tmpl_data[key]["body"])
+
+    def _stash_tmpl(self):
+        self._tmpl_data[self._cur_tmpl_key] = {
+            "subject": self._tmpl_subject.text().strip(),
+            "body": self._tmpl_body.toPlainText(),
+        }
+
+    def _on_tmpl_type_changed(self):
+        self._stash_tmpl()
+        self._cur_tmpl_key = self._tmpl_type.currentData()
+        self._show_tmpl(self._cur_tmpl_key)
+
     def _save(self):
         config = get_config()
         config["smtp"] = {
@@ -71,6 +125,8 @@ class EmailSettingsWidget(QWidget):
             "use_tls": self._use_tls.isChecked(),
             "test_addr": self._test_addr.text().strip(),
         }
+        self._stash_tmpl()
+        config["email_templates"] = self._tmpl_data
         save_config(config)
         QMessageBox.information(self, "保存", "メール設定を保存しました。")
 

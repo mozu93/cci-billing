@@ -3,7 +3,7 @@ from datetime import date
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QHeaderView, QComboBox, QLineEdit, QMessageBox,
-    QSpinBox
+    QSpinBox, QFileDialog, QProgressDialog
 )
 from PyQt6.QtCore import Qt, QTimer
 from app.database.connection import get_session
@@ -149,6 +149,18 @@ class IssuanceFromProjectWidget(QWidget):
         btn_row.addWidget(self._btn_issue_all)
         btn_row.addWidget(QLabel("配付方法："))
         btn_row.addWidget(self._delivery_combo)
+        btn_row.addSpacing(16)
+        self._btn_export_xlsx = QPushButton("Excel出力")
+        self._btn_export_xlsx.setToolTip(
+            "表示中の名簿と数量をExcelに出力します。\n"
+            "Excelで数量を入力後、「Excel取込」で読み込めます。")
+        self._btn_export_xlsx.clicked.connect(self._export_excel)
+        btn_row.addWidget(self._btn_export_xlsx)
+        self._btn_import_xlsx = QPushButton("Excel取込")
+        self._btn_import_xlsx.setToolTip(
+            "Excel出力したファイルを読み込み、数量と発行チェックを画面に反映します。")
+        self._btn_import_xlsx.clicked.connect(self._import_excel)
+        btn_row.addWidget(self._btn_import_xlsx)
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
@@ -447,6 +459,198 @@ class IssuanceFromProjectWidget(QWidget):
             pm_id, _, _ = data_item.data(Qt.ItemDataRole.UserRole)
             self._qty_cache[pm_id] = self._get_row_quantities(r)
 
+    # ── Excel入出力 ───────────────────────────────────────────────
+
+    _XLSX_FIXED_HEADERS = ["ID", "会員番号", "事業所名", "フリガナ", "代表者名"]
+
+    def _export_excel(self):
+        """表示中の名簿＋項目ごとの数量をExcelに出力する。"""
+        project_id = self._proj_combo.currentData()
+        if project_id is None:
+            QMessageBox.information(self, "案件未選択", "件名を選択してください。")
+            return
+        if not self._templates:
+            QMessageBox.information(
+                self, "項目なし",
+                "この案件には項目テンプレートが設定されていません。")
+            return
+        if self._table.rowCount() == 0:
+            QMessageBox.information(self, "対象なし", "表示中の名簿がありません。")
+            return
+
+        proj_name = self._proj_combo.currentText()
+        safe = "".join(c for c in proj_name if c not in '\\/:*?"<>|')
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Excel出力", f"{safe}_数量入力.xlsx", "Excel (*.xlsx)")
+        if not path:
+            return
+
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill
+        from openpyxl.utils import get_column_letter
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "数量入力"
+        headers = self._XLSX_FIXED_HEADERS + [t["name"] for t in self._templates]
+        ws.append(headers)
+        fill = PatternFill("solid", fgColor="DDEBF7")
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+            cell.fill = fill
+
+        exported = 0
+        for r in range(self._table.rowCount()):
+            data_item = self._table.item(r, COL_ORG)
+            if not data_item:
+                continue
+            pm_id, _, _ = data_item.data(Qt.ItemDataRole.UserRole)
+            qty = self._get_row_quantities(r)
+            ws.append([
+                pm_id,
+                self._table.item(r, COL_NUM).text(),
+                self._table.item(r, COL_ORG).text(),
+                self._table.item(r, COL_KANA).text(),
+                self._table.item(r, COL_REP).text(),
+            ] + [qty.get(t["id"], 0) for t in self._templates])
+            exported += 1
+
+        widths = [6, 10, 28, 22, 14] + [14] * len(self._templates)
+        for i, w in enumerate(widths, start=1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+        ws.freeze_panes = "A2"
+        try:
+            wb.save(path)
+        except PermissionError:
+            QMessageBox.critical(
+                self, "保存エラー",
+                "ファイルを保存できませんでした。\n"
+                "同じファイルをExcelで開いたままになっていないか確認してください。")
+            return
+        QMessageBox.information(
+            self, "Excel出力",
+            f"{exported}件を出力しました。\n{path}\n\n"
+            "Excelで数量を入力・保存後、「Excel取込」で読み込んでください。\n"
+            "・数量0の項目は明細に含まれません\n"
+            "・全項目0の行は発行対象外になります\n"
+            "・ID列は照合に使うため変更しないでください")
+
+    def _import_excel(self):
+        """Excel出力で編集したファイルを読み込み、数量とチェックを画面に反映する。"""
+        if self._table.rowCount() == 0:
+            QMessageBox.information(self, "対象なし", "表示中の名簿がありません。")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Excel取込", "", "Excel (*.xlsx)")
+        if not path:
+            return
+
+        import openpyxl
+        try:
+            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+            ws = wb.active
+            all_rows = [list(r) for r in ws.iter_rows(values_only=True)]
+            wb.close()
+        except Exception as e:
+            QMessageBox.critical(self, "読込エラー", str(e))
+            return
+        if not all_rows:
+            QMessageBox.warning(self, "読込エラー", "データが見つかりませんでした。")
+            return
+
+        header = [str(c).strip() if c is not None else "" for c in all_rows[0]]
+        if "ID" not in header:
+            QMessageBox.critical(
+                self, "読込エラー",
+                "見出し行に「ID」列が見つかりません。\n"
+                "「Excel出力」で出力したファイルを使用してください。")
+            return
+        id_col = header.index("ID")
+        tmpl_cols: dict[int, int] = {}
+        missing_cols: list[str] = []
+        for t in self._templates:
+            if t["name"] in header:
+                tmpl_cols[t["id"]] = header.index(t["name"])
+            else:
+                missing_cols.append(t["name"])
+        if not tmpl_cols:
+            QMessageBox.critical(
+                self, "読込エラー",
+                "この案件の項目に対応する数量列が1つも見つかりません。\n"
+                "案件の選択が出力時と同じか確認してください。")
+            return
+
+        file_qty: dict[int, dict[int, int]] = {}
+        bad_rows: list[str] = []
+        for i, cells in enumerate(all_rows[1:], start=2):
+            raw_id = cells[id_col] if id_col < len(cells) else None
+            if raw_id is None or str(raw_id).strip() == "":
+                continue
+            try:
+                pm_id = int(str(raw_id).strip())
+            except ValueError:
+                bad_rows.append(f"{i}行目: ID「{raw_id}」が数値ではありません")
+                continue
+            q = {}
+            for tid, col in tmpl_cols.items():
+                v = cells[col] if col < len(cells) else None
+                if v is None or str(v).strip() == "":
+                    q[tid] = 0
+                    continue
+                try:
+                    f = float(str(v).strip())
+                    iv = int(f)
+                    if iv < 0:
+                        raise ValueError
+                    if iv != f:
+                        bad_rows.append(
+                            f"{i}行目: 数量「{v}」は整数でないため{iv}として扱います")
+                    if iv > 9999:
+                        bad_rows.append(
+                            f"{i}行目: 数量「{v}」は上限の9999に丸めました")
+                        iv = 9999
+                    q[tid] = iv
+                except (ValueError, OverflowError):
+                    bad_rows.append(f"{i}行目: 数量「{v}」が不正です（0として扱います）")
+                    q[tid] = 0
+            file_qty[pm_id] = q
+
+        applied = 0
+        checked = 0
+        for r in range(self._table.rowCount()):
+            data_item = self._table.item(r, COL_ORG)
+            if not data_item:
+                continue
+            pm_id, _, _ = data_item.data(Qt.ItemDataRole.UserRole)
+            if pm_id not in file_qty:
+                continue
+            q = file_qty.pop(pm_id)
+            for col_offset, tmpl in enumerate(self._templates):
+                spin = self._table.cellWidget(r, 5 + col_offset)
+                if isinstance(spin, _QtySpinBox) and tmpl["id"] in q:
+                    spin.setValue(q[tmpl["id"]])
+            total = sum(q.values())
+            chk = self._table.item(r, COL_CHK)
+            if chk:
+                chk.setCheckState(Qt.CheckState.Checked if total > 0
+                                  else Qt.CheckState.Unchecked)
+            if total > 0:
+                checked += 1
+            applied += 1
+        self._save_qty_cache()
+
+        msg = [f"{applied}件の数量を反映し、{checked}件に発行チェックを入れました。",
+               "内容を確認のうえ「選択行に発行」ボタンで発行してください。"]
+        if file_qty:
+            msg.append(f"※名簿に表示されていないID {len(file_qty)}件は反映できませんでした。\n"
+                       "（発行済み等で非表示の可能性。表示を「すべて」にして再度取り込んでください）")
+        if missing_cols:
+            msg.append("※次の項目の数量列が見つかりませんでした：" + "、".join(missing_cols))
+        if bad_rows:
+            shown = "\n".join(bad_rows[:5])
+            more = f"\n…ほか{len(bad_rows) - 5}件" if len(bad_rows) > 5 else ""
+            msg.append(f"※読み込めなかった値：\n{shown}{more}")
+        QMessageBox.information(self, "Excel取込", "\n\n".join(msg))
+
     # ── チェック済み行の取得 ──────────────────────────────────────
 
     def _checked_rows(self) -> list[tuple[int, tuple]]:
@@ -478,6 +682,11 @@ class IssuanceFromProjectWidget(QWidget):
                     continue
                 quantities = self._get_row_quantities(row_idx)
                 issuance_id = invoice_id if doc_type == "invoice" else receipt_id
+                if issuance_id is None and quantities and not any(quantities.values()):
+                    org_item = self._table.item(row_idx, COL_ORG)
+                    name = org_item.text() if org_item else f"{row_idx + 1}行目"
+                    errors.append(f"{name}：数量がすべて0のためスキップしました")
+                    continue
                 try:
                     pm = session.get(ProjectMember, pm_id)
                     if issuance_id is None:
@@ -502,6 +711,10 @@ class IssuanceFromProjectWidget(QWidget):
                                        staff_name=current_user.get_name(),
                                        delivery_method=delivery)
                         iss = session.get(Issuance, issuance_id)
+                    elif (iss.delivery_method or "") != delivery:
+                        # 発行済み行の再実行時も配付方法を実態に合わせる
+                        iss.delivery_method = delivery
+                        session.commit()
                     issued_issuances.append((iss, session))
                 except Exception as e:
                     errors.append(str(e))
@@ -521,9 +734,88 @@ class IssuanceFromProjectWidget(QWidget):
                     generate_and_open(iss, sess, due_date=due_date)
                 except Exception as e:
                     errors.append(str(e))
+
+            if delivery == "メール送付" and issued_issuances:
+                self._send_issue_emails(issued_issuances, errors)
         finally:
             session.close()
         return errors
+
+    def _send_issue_emails(self, issued_issuances: list, errors: list[str]):
+        """配付方法「メール送付」で発行した分のPDFをメール添付で送信する。
+
+        1つのSMTP接続を使い回し、進捗ダイアログ（中止可）を表示する。
+        送信成否は操作ログに記録する。
+        """
+        from app.database.models import ProjectMember
+        from app.services.email_service import SmtpSession, send_issuance_email
+        from app.services.operation_log_service import add_log
+        label = "請求書" if self._doc_type == "invoice" else "領収書"
+
+        rows = []
+        lines = []
+        for iss, sess in issued_issuances:
+            email = ""
+            if iss.project_member_id:
+                pm = sess.get(ProjectMember, iss.project_member_id)
+                email = (pm.email or "").strip() if pm else ""
+            rows.append((iss, sess, email))
+            name = (iss.recipient_organization or iss.recipient_name
+                    or iss.doc_number)
+            lines.append(f"・{name} → {email or '（アドレス未登録）'}")
+
+        shown = lines[:10]
+        if len(lines) > 10:
+            shown.append(f"…ほか{len(lines) - 10}件")
+        box = QMessageBox(
+            QMessageBox.Icon.Question, "メール送信の確認",
+            f"{len(lines)}件の宛先に{label}をメール送信します。"
+            f"よろしいですか？\n\n" + "\n".join(shown),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            self)
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        if box.exec() != QMessageBox.StandardButton.Yes:
+            return
+
+        progress = QProgressDialog(
+            f"{label}をメール送信中…", "中止", 0, len(rows), self)
+        progress.setWindowTitle("メール送信")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+
+        sent = 0
+        canceled_at = None
+        try:
+            with SmtpSession() as smtp:
+                for i, (iss, sess, email) in enumerate(rows):
+                    if progress.wasCanceled():
+                        canceled_at = i
+                        break
+                    name = (iss.recipient_organization or iss.recipient_name
+                            or iss.doc_number)
+                    progress.setLabelText(
+                        f"送信中（{i + 1}/{len(rows)}）：{name}")
+                    progress.setValue(i)
+                    try:
+                        addr = send_issuance_email(
+                            sess, iss, to_addr=email or None, smtp=smtp)
+                        sent += 1
+                        add_log(sess, "メール送信", "issuance", iss.id,
+                                f"{label} {iss.doc_number} → {addr}")
+                    except Exception as e:
+                        errors.append(f"メール送信失敗：{e}")
+                        add_log(sess, "メール送信失敗", "issuance", iss.id,
+                                f"{label} {iss.doc_number}：{e}")
+        except Exception as e:
+            # SMTP接続自体の失敗（サーバー設定誤り等）
+            errors.append(f"メール送信失敗（SMTP接続エラー）：{e}")
+        finally:
+            progress.setValue(len(rows))
+
+        msg = f"{sent}件のメールを送信しました。"
+        if canceled_at is not None:
+            msg += f"\n（中止のため残り{len(rows) - canceled_at}件は未送信です）"
+        QMessageBox.information(self, "メール送信", msg)
 
     def _issue_checked(self):
         targets = self._checked_rows()

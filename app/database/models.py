@@ -204,14 +204,3 @@ class Payment(Base):
     staff_id = Column(Integer, ForeignKey("staff.id"), nullable=True)
     staff_name = Column(String(100), default="")
     created_at = Column(DateTime, default=datetime.now)
-
-
-class EmailTemplate(Base):
-    __tablename__ = "email_templates"
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False)
-    subject = Column(String(200), nullable=False)
-    body = Column(Text, default="")
-    template_type = Column(String(20), default="invoice")
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
