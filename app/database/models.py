@@ -16,6 +16,8 @@ class Staff(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False, unique=True)
     is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)
+    password_hash = Column(String(200), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -163,6 +165,7 @@ class Issuance(Base):
     member_number = Column(String(50), default="")
     recipient_organization = Column(String(200), default="")
     recipient_kana = Column(String(200), default="")
+    recipient_department = Column(String(100), default="")
     recipient_name = Column(String(100), default="")
     recipient_name_kana = Column(String(100), default="")
     recipient_phone = Column(String(50), default="")

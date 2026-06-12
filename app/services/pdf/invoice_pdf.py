@@ -249,6 +249,7 @@ def _build_client_block(issuance, subject: str = "",
                          recipient_address2: str = "") -> list:
     parts = []
     org    = issuance.recipient_organization or ""
+    dept   = getattr(issuance, "recipient_department", "") or ""
     person = issuance.recipient_name or ""
 
     if window_envelope:
@@ -266,6 +267,8 @@ def _build_client_block(issuance, subject: str = "",
 
     if person:
         parts.append(Paragraph(org, _s("org", size=13, bold=True)))
+        if dept:
+            parts.append(Paragraph(dept, _s("dept", size=10)))
         parts.append(Paragraph(f"{person}　様", _s("person", size=11)))
     else:
         parts.append(Paragraph(

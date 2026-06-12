@@ -209,6 +209,7 @@ def create_direct_issuance(session: Session, lines_data: list[dict],
                             project_name: str = "直接発行",
                             member_number: str = "",
                             recipient_kana: str = "",
+                            recipient_department: str = "",
                             recipient_name_kana: str = "",
                             recipient_phone: str = "") -> Issuance:
     from app.database.models import Project
@@ -235,6 +236,7 @@ def create_direct_issuance(session: Session, lines_data: list[dict],
         member_number=member_number,
         recipient_organization=recipient_organization,
         recipient_kana=recipient_kana,
+        recipient_department=recipient_department,
         recipient_name=recipient_name,
         recipient_name_kana=recipient_name_kana,
         recipient_phone=recipient_phone,
@@ -282,6 +284,7 @@ def update_direct_issuance(session: Session, issuance_id: int,
                             staff_name: str = "",
                             member_number: str = "",
                             recipient_kana: str = "",
+                            recipient_department: str = "",
                             recipient_name_kana: str = "",
                             recipient_phone: str = "") -> Issuance:
     issuance = session.get(Issuance, issuance_id)
@@ -294,6 +297,7 @@ def update_direct_issuance(session: Session, issuance_id: int,
     issuance.member_number = member_number
     issuance.recipient_organization = recipient_organization
     issuance.recipient_kana = recipient_kana
+    issuance.recipient_department = recipient_department
     issuance.recipient_name = recipient_name
     issuance.recipient_name_kana = recipient_name_kana
     issuance.recipient_phone = recipient_phone

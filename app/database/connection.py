@@ -13,6 +13,13 @@ def get_engine(url: str | None = None):
 def _migrate(engine):
     """既存DBに不足カラムを追加するマイグレーション"""
     with engine.connect() as conn:
+        staff_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(staff)"))}
+        if "is_admin" not in staff_cols:
+            conn.execute(text("ALTER TABLE staff ADD COLUMN is_admin BOOLEAN DEFAULT 0"))
+            conn.commit()
+        if "password_hash" not in staff_cols:
+            conn.execute(text("ALTER TABLE staff ADD COLUMN password_hash VARCHAR(200)"))
+            conn.commit()
         cols = {row[1] for row in conn.execute(text("PRAGMA table_info(company_settings)"))}
         if "print_seal" not in cols:
             conn.execute(text(
@@ -39,10 +46,11 @@ def _migrate(engine):
 
         iss_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(issuances)"))}
         for col, ddl in [
-            ("member_number",       "VARCHAR(50) DEFAULT ''"),
-            ("recipient_kana",      "VARCHAR(200) DEFAULT ''"),
-            ("recipient_name_kana", "VARCHAR(100) DEFAULT ''"),
-            ("recipient_phone",     "VARCHAR(50) DEFAULT ''"),
+            ("member_number",        "VARCHAR(50) DEFAULT ''"),
+            ("recipient_kana",       "VARCHAR(200) DEFAULT ''"),
+            ("recipient_department", "VARCHAR(100) DEFAULT ''"),
+            ("recipient_name_kana",  "VARCHAR(100) DEFAULT ''"),
+            ("recipient_phone",      "VARCHAR(50) DEFAULT ''"),
         ]:
             if col not in iss_cols:
                 conn.execute(text(f"ALTER TABLE issuances ADD COLUMN {col} {ddl}"))

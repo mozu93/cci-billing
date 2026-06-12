@@ -1,13 +1,14 @@
 # app/ui/issuance_counter.py
 import calendar
+import unicodedata
 from datetime import date
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout, QGroupBox,
     QLineEdit, QSpinBox, QComboBox, QLabel, QPushButton,
     QMessageBox, QFrame, QScrollArea, QStyleFactory, QDialog,
-    QCheckBox, QDateEdit, QCompleter
+    QCheckBox, QDateEdit, QCompleter, QListWidget,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QDate, QTimer, QThread
+from PyQt6.QtCore import Qt, pyqtSignal, QDate, QTimer, QThread, QPoint
 from PyQt6.QtGui import QIntValidator
 from app.database.connection import get_session
 from app.services.category_service import get_active_categories
@@ -154,6 +155,7 @@ class IssuanceCounterWidget(QWidget):
         self._cell_style = QStyleFactory.create("Fusion")
         self._postal_worker: _PostalWorker | None = None
         self._members: list = []
+        self._member_by_number: dict = {}
         self._build()
 
     def showEvent(self, event):
@@ -196,9 +198,14 @@ class IssuanceCounterWidget(QWidget):
             self._member_number_edit.setText(iss.member_number or "")
             self._org_name.setText(iss.recipient_organization or "")
             self._kana_edit.setText(iss.recipient_kana or "")
+            self._dept_edit.setText(getattr(iss, "recipient_department", "") or "")
             self._rep_name_edit.setText(iss.recipient_name or "")
             self._rep_kana_edit.setText(iss.recipient_name_kana or "")
             self._phone_edit.setText(iss.recipient_phone or "")
+            if any([iss.recipient_kana,
+                    getattr(iss, "recipient_department", ""),
+                    iss.recipient_name, iss.recipient_name_kana]):
+                self._show_detail()
             idx = self._delivery.findText(iss.delivery_method or "")
             if idx >= 0:
                 self._delivery.setCurrentIndex(idx)
@@ -301,12 +308,27 @@ class IssuanceCounterWidget(QWidget):
         dest_vbox.setSpacing(4)
 
         self._member_number_edit = QLineEdit()
+        self._member_number_edit.textChanged.connect(self._on_member_num_text_changed)
+
+        self._num_popup = QListWidget()
+        self._num_popup.setWindowFlags(Qt.WindowType.Popup)
+        self._num_popup.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._num_popup.setMaximumHeight(180)
+        self._num_popup.hide()
+        self._num_popup.itemClicked.connect(self._on_num_popup_clicked)
+
+        self._btn_clear_member = QPushButton("クリア")
+        self._btn_clear_member.setFixedWidth(52)
+        self._btn_clear_member.clicked.connect(self._clear_member_fields)
+
         self._org_name = QLineEdit()
         self._org_name.setPlaceholderText("必須")
         self._kana_edit = QLineEdit()
-        self._kana_edit.setPlaceholderText("フリガナ")
+        self._kana_edit.setPlaceholderText("フリガナ（並び替え・検索用）")
+        self._dept_edit = QLineEdit()
+        self._dept_edit.setPlaceholderText("所属・役職名")
         self._rep_name_edit = QLineEdit()
-        self._rep_name_edit.setPlaceholderText("氏名")
+        self._rep_name_edit.setPlaceholderText("氏名（宛名に表示）")
         self._rep_kana_edit = QLineEdit()
         self._rep_kana_edit.setPlaceholderText("氏名フリガナ")
         self._phone_edit = QLineEdit()
@@ -319,33 +341,61 @@ class IssuanceCounterWidget(QWidget):
             l.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             return l
 
-        grid = QGridLayout()
-        grid.setSpacing(6)
-        grid.setColumnMinimumWidth(0, 72)
-        grid.setColumnMinimumWidth(2, 80)
-        grid.setColumnStretch(1, 3)
-        grid.setColumnStretch(3, 2)
+        def _col_cfg(g):
+            g.setSpacing(6)
+            g.setColumnMinimumWidth(0, 72)
+            g.setColumnMinimumWidth(2, 80)
+            g.setColumnStretch(1, 3)
+            g.setColumnStretch(3, 2)
 
-        grid.addWidget(_lbl("会員番号"),   0, 0)
-        grid.addWidget(self._member_number_edit, 0, 1)
-        grid.addWidget(_lbl("電話番号"),   0, 2)
-        grid.addWidget(self._phone_edit,   0, 3)
+        # ── 常時表示（会員番号・事業所名・電話） ──────────────
+        grid_basic = QGridLayout()
+        _col_cfg(grid_basic)
 
-        grid.addWidget(_lbl("事業所名"),   1, 0)
-        grid.addWidget(self._org_name,     1, 1, 1, 3)
+        num_row_w = QWidget()
+        num_row_l = QHBoxLayout(num_row_w)
+        num_row_l.setContentsMargins(0, 0, 0, 0)
+        num_row_l.setSpacing(4)
+        num_row_l.addWidget(self._member_number_edit)
+        num_row_l.addWidget(self._btn_clear_member)
 
-        grid.addWidget(_lbl("フリガナ"),   2, 0)
-        grid.addWidget(self._kana_edit,    2, 1, 1, 3)
+        grid_basic.addWidget(_lbl("会員番号"), 0, 0)
+        grid_basic.addWidget(num_row_w,        0, 1)
+        grid_basic.addWidget(_lbl("電話番号"), 0, 2)
+        grid_basic.addWidget(self._phone_edit, 0, 3)
+        grid_basic.addWidget(_lbl("事業所名"), 1, 0)
+        grid_basic.addWidget(self._org_name,   1, 1, 1, 3)
+        dest_vbox.addLayout(grid_basic)
 
-        grid.addWidget(_lbl("氏名"),       3, 0)
-        grid.addWidget(self._rep_name_edit, 3, 1)
-        grid.addWidget(_lbl("氏名フリガナ"), 3, 2)
-        grid.addWidget(self._rep_kana_edit, 3, 3)
+        # ── 詳細トグルボタン ─────────────────────────────────
+        self._btn_detail_toggle = QPushButton("▶ フリガナ・氏名・メール等の詳細を入力")
+        self._btn_detail_toggle.setFlat(True)
+        self._btn_detail_toggle.setStyleSheet(
+            "text-align: left; color: #0055aa; padding: 2px 0;"
+        )
+        self._btn_detail_toggle.clicked.connect(self._toggle_detail)
+        dest_vbox.addWidget(self._btn_detail_toggle)
 
-        grid.addWidget(_lbl("メール"),     4, 0)
-        grid.addWidget(self._email,        4, 1, 1, 3)
+        # ── 詳細欄（折りたたみ） ─────────────────────────────
+        self._detail_widget = QWidget()
+        grid_detail = QGridLayout(self._detail_widget)
+        _col_cfg(grid_detail)
+        grid_detail.setContentsMargins(0, 0, 0, 0)
 
-        dest_vbox.addLayout(grid)
+        grid_detail.addWidget(_lbl("フリガナ"),     0, 0)
+        grid_detail.addWidget(self._kana_edit,      0, 1, 1, 3)
+        grid_detail.addWidget(_lbl("所属・役職"),   1, 0)
+        grid_detail.addWidget(self._dept_edit,      1, 1, 1, 3)
+        grid_detail.addWidget(_lbl("氏名"),         2, 0)
+        grid_detail.addWidget(self._rep_name_edit,  2, 1)
+        grid_detail.addWidget(_lbl("氏名フリガナ"), 2, 2)
+        grid_detail.addWidget(self._rep_kana_edit,  2, 3)
+        grid_detail.addWidget(_lbl("メール"),       3, 0)
+        grid_detail.addWidget(self._email,          3, 1, 1, 3)
+
+        self._detail_widget.setVisible(False)
+        dest_vbox.addWidget(self._detail_widget)
+
         top_row.addWidget(grp_dest, 6)
 
         grp_opts = QGroupBox("発行設定")
@@ -572,12 +622,9 @@ class IssuanceCounterWidget(QWidget):
         org_c.activated.connect(self._on_org_selected)
         self._org_name.setCompleter(org_c)
 
-        nums = [m.member_number for m in self._members if m.member_number]
-        num_c = QCompleter(nums, self)
-        num_c.setFilterMode(Qt.MatchFlag.MatchContains)
-        num_c.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        num_c.activated.connect(self._on_num_selected)
-        self._member_number_edit.setCompleter(num_c)
+        self._member_by_number = {
+            m.member_number: m for m in self._members if m.member_number
+        }
 
     def _on_org_selected(self, text: str):
         member = next((m for m in self._members
@@ -585,20 +632,90 @@ class IssuanceCounterWidget(QWidget):
         if member:
             self._fill_from_member(member)
 
-    def _on_num_selected(self, text: str):
-        member = next((m for m in self._members
-                       if m.member_number == text), None)
+    def _on_member_num_text_changed(self, text: str):
+        q = unicodedata.normalize('NFKC', text.strip())
+        self._num_popup.clear()
+        if not q or not self._member_by_number:
+            self._num_popup.hide()
+            return
+        q_lower = q.lower()
+        starts = sorted(k for k in self._member_by_number if k.lower().startswith(q_lower))
+        contains = sorted(k for k in self._member_by_number if q_lower in k.lower() and not k.lower().startswith(q_lower))
+        matches = (starts + contains)[:20]
+        if not matches:
+            self._num_popup.hide()
+            return
+        for m in matches:
+            self._num_popup.addItem(m)
+        pos = self._member_number_edit.mapToGlobal(
+            QPoint(0, self._member_number_edit.height())
+        )
+        self._num_popup.move(pos)
+        self._num_popup.setFixedWidth(max(self._member_number_edit.width(), 100))
+        self._num_popup.show()
+
+    def _on_num_popup_clicked(self, item):
+        text = item.text()
+        member = self._member_by_number.get(text)
+        self._num_popup.hide()
         if member:
             self._fill_from_member(member)
 
+    def _on_num_selected(self, text: str):
+        member = self._member_by_number.get(text)
+        if member:
+            self._fill_from_member(member)
+
+    def _toggle_detail(self):
+        visible = not self._detail_widget.isVisible()
+        self._detail_widget.setVisible(visible)
+        self._btn_detail_toggle.setText(
+            "▼ フリガナ・氏名・メール等の詳細を入力" if visible
+            else "▶ フリガナ・氏名・メール等の詳細を入力"
+        )
+
+    def _show_detail(self):
+        self._detail_widget.setVisible(True)
+        self._btn_detail_toggle.setText("▼ フリガナ・氏名・メール等の詳細を入力")
+
+    def _hide_detail(self):
+        self._detail_widget.setVisible(False)
+        self._btn_detail_toggle.setText("▶ フリガナ・氏名・メール等の詳細を入力")
+
+    def _clear_member_fields(self):
+        self._num_popup.hide()
+        self._member_number_edit.blockSignals(True)
+        self._member_number_edit.clear()
+        self._member_number_edit.blockSignals(False)
+        self._org_name.clear()
+        self._kana_edit.clear()
+        self._dept_edit.clear()
+        self._rep_name_edit.clear()
+        self._rep_kana_edit.clear()
+        self._phone_edit.clear()
+        self._email.clear()
+        self._hide_detail()
+
     def _fill_from_member(self, member):
+        self._num_popup.hide()
+        self._member_number_edit.blockSignals(True)
         self._member_number_edit.setText(member.member_number or "")
+        self._member_number_edit.blockSignals(False)
         self._org_name.setText(member.organization_name or "")
         self._kana_edit.setText(member.organization_kana or "")
+        self._dept_edit.setText(getattr(member, "department", "") or "")
         self._rep_name_edit.setText(member.representative_name or "")
         self._rep_kana_edit.setText(member.representative_kana or "")
         self._phone_edit.setText(member.phone or "")
         self._email.setText(member.email or "")
+        # 詳細欄に何か入っていれば自動展開
+        has_detail = any([
+            member.organization_kana, getattr(member, "department", ""),
+            member.representative_name, member.representative_kana,
+            member.email,
+        ])
+        if has_detail:
+            self._show_detail()
         if self._doc_type_str == "invoice":
             self._postal_code_edit.blockSignals(True)
             self._postal_code_edit.setText(member.postal_code or "")
@@ -646,6 +763,7 @@ class IssuanceCounterWidget(QWidget):
             return
         member_no  = self._member_number_edit.text().strip()
         kana       = self._kana_edit.text().strip()
+        dept       = self._dept_edit.text().strip()
         rep        = self._rep_name_edit.text().strip()
         rep_kana   = self._rep_kana_edit.text().strip()
         phone      = self._phone_edit.text().strip()
@@ -716,6 +834,7 @@ class IssuanceCounterWidget(QWidget):
                     staff_name             = current_user.get_name(),
                     member_number          = member_no,
                     recipient_kana         = kana,
+                    recipient_department   = dept,
                     recipient_name_kana    = rep_kana,
                     recipient_phone        = phone,
                 )
@@ -738,6 +857,7 @@ class IssuanceCounterWidget(QWidget):
                     project_name           = project_name,
                     member_number          = member_no,
                     recipient_kana         = kana,
+                    recipient_department   = dept,
                     recipient_name_kana    = rep_kana,
                     recipient_phone        = phone,
                 )
@@ -786,6 +906,7 @@ class IssuanceCounterWidget(QWidget):
             self._member_number_edit.clear()
             self._org_name.clear()
             self._kana_edit.clear()
+            self._dept_edit.clear()
             self._rep_name_edit.clear()
             self._rep_kana_edit.clear()
             self._phone_edit.clear()
