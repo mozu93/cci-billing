@@ -1,5 +1,6 @@
 # app/ui/issuance_counter.py
 import calendar
+import os
 import unicodedata
 from datetime import date
 from PyQt6.QtWidgets import (
@@ -24,12 +25,12 @@ W_SUB   = 90
 W_SAVE  = 70
 W_DEL   = 40
 ROW_H   = 48
-FIELD_H = 26
+FIELD_H = 31
 
 _SS_FIELD = (
     "QComboBox, QLineEdit, QSpinBox {"
     " border: 1px solid #b5b5b5; border-radius: 3px;"
-    " padding: 1px 4px; background: white; }"
+    " padding: 3px 4px; background: white; }"
 )
 
 
@@ -430,7 +431,8 @@ class IssuanceCounterWidget(QWidget):
         grp_opts = QGroupBox("発行設定")
         opts_form = QFormLayout(grp_opts)
         opts_form.setContentsMargins(10, 8, 10, 8)
-        opts_form.setSpacing(8)
+        opts_form.setVerticalSpacing(3)
+        opts_form.setHorizontalSpacing(8)
         self._delivery = QComboBox()
         self._delivery.addItems(["窓口手渡し", "郵送", "メール送付"])
         opts_form.addRow("配付方法", self._delivery)
@@ -447,7 +449,8 @@ class IssuanceCounterWidget(QWidget):
             self._addr_widget = QWidget()
             addr_form = QFormLayout(self._addr_widget)
             addr_form.setContentsMargins(0, 4, 0, 0)
-            addr_form.setSpacing(6)
+            addr_form.setVerticalSpacing(3)
+            addr_form.setHorizontalSpacing(8)
             self._postal_code_edit = QLineEdit()
             self._postal_code_edit.setFixedHeight(FIELD_H)
             self._postal_code_edit.setPlaceholderText("例：1234567")
@@ -489,7 +492,7 @@ class IssuanceCounterWidget(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setMinimumHeight(140)
+        scroll.setMinimumHeight(240)
 
         self._rows_container = QWidget()
         self._rows_container.setStyleSheet("background: white;")
@@ -931,6 +934,23 @@ class IssuanceCounterWidget(QWidget):
                 )
                 _add_log(session, "発行", "issuance", iss.id,
                          f"{label} {iss.doc_number} 宛先：{iss.recipient_organization or iss.recipient_name}")
+            # ── 保存先を選択（メール送付以外）──────────────────────────
+            from PyQt6.QtWidgets import QFileDialog
+            from app.utils.pdf_helpers import get_pdf_output_dir
+            _delivery_text = self._delivery.currentText()
+            _save_path: str | None = None
+            if _delivery_text != "メール送付":
+                _out_dir = get_pdf_output_dir()
+                _default_name = os.path.join(_out_dir, f"{iss.doc_number}.pdf")
+                _save_path, _ = QFileDialog.getSaveFileName(
+                    self, "PDFの保存先を選択", _default_name, "PDF ファイル (*.pdf)"
+                )
+                if not _save_path:
+                    QMessageBox.information(
+                        self, "保存キャンセル",
+                        "発行は記録されましたが、PDFは保存されませんでした。\n"
+                        "再発行タブから出力できます。",
+                    )
             from app.utils.pdf_helpers import generate_and_open
             due_date = None
             window_envelope = False
@@ -945,13 +965,24 @@ class IssuanceCounterWidget(QWidget):
                     address2    = self._address2_edit.text().strip()
             from app.database.models import Project as _Project
             _proj = session.get(_Project, iss.project_id)
-            generate_and_open(iss, session, due_date=due_date,
-                              window_envelope=window_envelope,
-                              recipient_postal_code=postal_code,
-                              recipient_address=address1,
-                              recipient_address2=address2,
-                              project=_proj)
-            if self._delivery.currentText() == "メール送付":
+            if _delivery_text == "メール送付":
+                # メール添付用に生成（ビューアで開かない）
+                generate_and_open(iss, session, due_date=due_date, open_file=False,
+                                  window_envelope=window_envelope,
+                                  recipient_postal_code=postal_code,
+                                  recipient_address=address1,
+                                  recipient_address2=address2,
+                                  project=_proj)
+            elif _save_path:
+                # 指定パスに保存してビューアで開く
+                generate_and_open(iss, session, due_date=due_date,
+                                  save_path=_save_path,
+                                  window_envelope=window_envelope,
+                                  recipient_postal_code=postal_code,
+                                  recipient_address=address1,
+                                  recipient_address2=address2,
+                                  project=_proj)
+            if _delivery_text == "メール送付":
                 from app.services.email_service import send_issuance_email
                 from app.services.operation_log_service import add_log
                 try:
