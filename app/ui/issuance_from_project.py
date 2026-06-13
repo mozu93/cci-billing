@@ -1,5 +1,6 @@
 # app/ui/issuance_from_project.py
 import calendar
+import os
 from datetime import date
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
@@ -107,68 +108,50 @@ class IssuanceFromProjectWidget(QWidget):
     def _build(self):
         layout = QVBoxLayout(self)
 
-        top = QHBoxLayout()
-        top.addWidget(QLabel("年度："))
+        # ── フィルタ行（年度 / 業務区分 / 件名 / 表示 / 検索） ────────
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("年度："))
         self._year_combo = QComboBox()
         self._year_combo.setMinimumWidth(95)
         self._year_combo.currentIndexChanged.connect(self._filter_projects)
-        top.addWidget(self._year_combo)
-        top.addWidget(QLabel("業務区分："))
+        filter_row.addWidget(self._year_combo)
+        filter_row.addWidget(QLabel("業務区分："))
         self._cat_combo = QComboBox()
         self._cat_combo.setMinimumWidth(120)
         self._cat_combo.currentIndexChanged.connect(self._filter_projects)
-        top.addWidget(self._cat_combo)
-        top.addWidget(QLabel("件名："))
+        filter_row.addWidget(self._cat_combo)
+        filter_row.addWidget(QLabel("件名："))
         self._proj_combo = QComboBox()
-        self._proj_combo.setMinimumWidth(240)
+        self._proj_combo.setMinimumWidth(200)
         self._proj_combo.currentIndexChanged.connect(self._on_project_changed)
-        top.addWidget(self._proj_combo)
-        top.addWidget(QLabel("表示："))
+        filter_row.addWidget(self._proj_combo)
+        filter_row.addWidget(QLabel("表示："))
         self._filter_combo = QComboBox()
         self._filter_combo.addItems(["未発行のみ", "すべて"])
         self._filter_combo.currentIndexChanged.connect(self._load_members)
-        top.addWidget(self._filter_combo)
-        top.addStretch()
-        layout.addLayout(top)
-
-        search_row = QHBoxLayout()
+        filter_row.addWidget(self._filter_combo)
+        filter_row.addSpacing(12)
         self._search = QLineEdit()
         self._search.setPlaceholderText("事業所名・代表者名で絞り込み")
         self._timer = QTimer()
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._load_members)
         self._search.textChanged.connect(lambda: self._timer.start(300))
-        search_row.addWidget(QLabel("検索："))
-        search_row.addWidget(self._search)
-        layout.addLayout(search_row)
+        filter_row.addWidget(self._search)
+        layout.addLayout(filter_row)
 
-        # ── ボタン行（テーブルの上） ──────────────────────────────────
+        # ── アクション行（発行 / 配付方法 / 支払期日 / 封筒 / Excel） ─
         label = "請求書" if self._doc_type == "invoice" else "領収書"
-        btn_row = QHBoxLayout()
+        action_row = QHBoxLayout()
         self._btn_issue = QPushButton(f"選択した{label}を発行")
         self._btn_issue.clicked.connect(self._issue_checked)
         self._delivery_combo = QComboBox()
         self._delivery_combo.addItems(["窓口手渡し", "郵送", "メール送付"])
-        btn_row.addWidget(self._btn_issue)
-        btn_row.addWidget(QLabel("配付方法："))
-        btn_row.addWidget(self._delivery_combo)
-        btn_row.addSpacing(16)
-        self._btn_export_xlsx = QPushButton("Excel出力")
-        self._btn_export_xlsx.setToolTip(
-            "表示中の名簿と数量をExcelに出力します。\n"
-            "Excelで数量を入力後、「Excel取込」で読み込めます。")
-        self._btn_export_xlsx.clicked.connect(self._export_excel)
-        btn_row.addWidget(self._btn_export_xlsx)
-        self._btn_import_xlsx = QPushButton("Excel取込")
-        self._btn_import_xlsx.setToolTip(
-            "Excel出力したファイルを読み込み、数量と発行チェックを画面に反映します。")
-        self._btn_import_xlsx.clicked.connect(self._import_excel)
-        btn_row.addWidget(self._btn_import_xlsx)
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
+        action_row.addWidget(self._btn_issue)
+        action_row.addWidget(QLabel("配付方法："))
+        action_row.addWidget(self._delivery_combo)
 
         if self._doc_type == "invoice":
-            opts_row = QHBoxLayout()
             today = date.today()
             nm_year = today.year + 1 if today.month == 12 else today.year
             nm_month = 1 if today.month == 12 else today.month + 1
@@ -177,12 +160,25 @@ class IssuanceFromProjectWidget(QWidget):
             self._due_date.setCalendarPopup(True)
             self._due_date.setDisplayFormat("yyyy/MM/dd")
             self._window_envelope_chk = QCheckBox("窓あき封筒モード")
-            opts_row.addWidget(QLabel("支払期日："))
-            opts_row.addWidget(self._due_date)
-            opts_row.addSpacing(16)
-            opts_row.addWidget(self._window_envelope_chk)
-            opts_row.addStretch()
-            layout.addLayout(opts_row)
+            action_row.addSpacing(16)
+            action_row.addWidget(QLabel("支払期日："))
+            action_row.addWidget(self._due_date)
+            action_row.addSpacing(8)
+            action_row.addWidget(self._window_envelope_chk)
+
+        action_row.addStretch()
+        self._btn_export_xlsx = QPushButton("Excel出力")
+        self._btn_export_xlsx.setToolTip(
+            "表示中の名簿と数量をExcelに出力します。\n"
+            "Excelで数量を入力後、「Excel取込」で読み込めます。")
+        self._btn_export_xlsx.clicked.connect(self._export_excel)
+        action_row.addWidget(self._btn_export_xlsx)
+        self._btn_import_xlsx = QPushButton("Excel取込")
+        self._btn_import_xlsx.setToolTip(
+            "Excel出力したファイルを読み込み、数量と発行チェックを画面に反映します。")
+        self._btn_import_xlsx.clicked.connect(self._import_excel)
+        action_row.addWidget(self._btn_import_xlsx)
+        layout.addLayout(action_row)
 
         self._table = _CheckableTable(0, 7)
         self._table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
@@ -784,6 +780,16 @@ class IssuanceFromProjectWidget(QWidget):
             due_date = date(qd.year(), qd.month(), qd.day())
             window_envelope = self._window_envelope_chk.isChecked()
 
+        # ── 保存先フォルダを選択（メール送付以外）──────────────────
+        save_dir: str | None = None
+        if delivery != "メール送付":
+            from app.utils.pdf_helpers import get_pdf_output_dir
+            save_dir = QFileDialog.getExistingDirectory(
+                self, "PDFの保存先フォルダを選択", get_pdf_output_dir()
+            )
+            if not save_dir:
+                return errors  # キャンセル → DB変更なしで終了
+
         # ── 発行 → PDF生成（失敗時は発行を取り消す）──────────────
         session = get_session()
         issued_issuances = []
@@ -830,8 +836,13 @@ class IssuanceFromProjectWidget(QWidget):
                     try:
                         from app.database.models import Project as _Project
                         _proj = session.get(_Project, iss.project_id)
+                        _pdf_save_path = (
+                            os.path.join(save_dir, f"{iss.doc_number}.pdf")
+                            if save_dir else None
+                        )
                         path = generate_and_open(iss, session, due_date=due_date,
                                                  open_file=open_each,
+                                                 save_path=_pdf_save_path,
                                                  window_envelope=window_envelope,
                                                  project=_proj)
                         if path:
@@ -856,7 +867,7 @@ class IssuanceFromProjectWidget(QWidget):
             elif len(pdf_paths) > 1:
                 # 一括発行：個別に開かず1つに結合して開く（連続印刷用）
                 try:
-                    merge_and_open(pdf_paths, self._proj_combo.currentText())
+                    merge_and_open(pdf_paths, self._proj_combo.currentText(), output_dir=save_dir)
                 except Exception as e:
                     errors.append(f"PDF結合に失敗しました：{e}")
         finally:
