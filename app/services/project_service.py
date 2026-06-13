@@ -5,11 +5,17 @@ from app.database.models import Project, ProjectTemplate, ProjectMember, Issuanc
 
 def create_project(session: Session, name: str, category_id: int,
                    fiscal_year: int, project_type: str,
-                   notes: str = "") -> Project:
+                   notes: str = "",
+                   company_settings_id: int | None = None,
+                   bank_account_id: int | None = None,
+                   seal_image_id: int | None = None) -> Project:
     proj = Project(
         name=name, category_id=category_id,
         fiscal_year=fiscal_year, project_type=project_type,
-        status="active", notes=notes
+        status="active", notes=notes,
+        company_settings_id=company_settings_id,
+        bank_account_id=bank_account_id,
+        seal_image_id=seal_image_id,
     )
     session.add(proj)
     session.commit()
@@ -48,12 +54,14 @@ def close_project(session: Session, project_id: int) -> None:
 def add_template_to_project(session: Session, project_id: int,
                              template_id: int,
                              unit_price_override: int | None = None,
-                             sort_order: int = 0) -> ProjectTemplate:
+                             sort_order: int = 0,
+                             default_quantity: int = 1) -> ProjectTemplate:
     pt = ProjectTemplate(
         project_id=project_id,
         item_template_id=template_id,
         sort_order=sort_order,
-        unit_price_override=unit_price_override
+        unit_price_override=unit_price_override,
+        default_quantity=default_quantity,
     )
     session.add(pt)
     session.commit()

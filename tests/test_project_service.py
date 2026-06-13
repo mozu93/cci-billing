@@ -149,3 +149,25 @@ def test_get_project_members_newest_first(db_session):
     members = get_project_members(db_session, proj.id, newest_first=True)
     assert members[0].organization_name == "後で登録"
     assert members[1].organization_name == "先に登録"
+
+
+def test_create_project_with_issuer(db_session):
+    from app.database.models import CompanySettings, BankAccount
+    from app.services.category_service import create_category
+
+    cs = CompanySettings(name="テスト会社", is_default=True)
+    db_session.add(cs)
+    db_session.commit()
+    bank = BankAccount(company_id=cs.id, label="口座", bank_name="○○銀行", is_default=True)
+    db_session.add(bank)
+    db_session.commit()
+
+    cat = create_category(db_session, "青年部")
+    proj = create_project(db_session, name="テストPJ",
+                          category_id=cat.id, fiscal_year=2026,
+                          project_type="list",
+                          company_settings_id=cs.id,
+                          bank_account_id=bank.id)
+    assert proj.company_settings_id == cs.id
+    assert proj.bank_account_id == bank.id
+    assert proj.seal_image_id is None
