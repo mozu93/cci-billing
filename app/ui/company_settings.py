@@ -153,10 +153,10 @@ class CompanySettingsWidget(QWidget):
         if select_id is not None:
             for r in range(self._issuer_table.rowCount()):
                 if self._issuer_table.item(r, 0).data(0x0100) == select_id:
-                    self._issuer_table.setCurrentRow(r)
+                    self._issuer_table.selectRow(r)
                     return
         if self._issuer_table.rowCount() > 0:
-            self._issuer_table.setCurrentRow(0)
+            self._issuer_table.selectRow(0)
 
     def _on_issuer_selected(self, row: int):
         if row < 0:
