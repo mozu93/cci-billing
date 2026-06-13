@@ -33,6 +33,7 @@ class CompanySettings(Base):
     invoice_reg_number = Column(String(20), default="")
     logo_path = Column(String(500), default="")
     print_seal = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -122,8 +123,15 @@ class Project(Base):
     issue_date = Column(Date, nullable=True)
     due_date = Column(Date, nullable=True)
     notes = Column(Text, default="")
+    company_settings_id = Column(Integer, ForeignKey("company_settings.id"), nullable=True)
+    bank_account_id     = Column(Integer, ForeignKey("bank_accounts.id"),    nullable=True)
+    seal_image_id       = Column(Integer, ForeignKey("seal_images.id"),      nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    issuer       = relationship("CompanySettings", foreign_keys=[company_settings_id])
+    bank_account = relationship("BankAccount",     foreign_keys=[bank_account_id])
+    seal_image   = relationship("SealImage",       foreign_keys=[seal_image_id])
 
 
 class ProjectTemplate(Base):
@@ -133,6 +141,7 @@ class ProjectTemplate(Base):
     item_template_id = Column(Integer, ForeignKey("item_templates.id"), nullable=False)
     sort_order = Column(Integer, default=0)
     unit_price_override = Column(Numeric(15, 0), nullable=True)
+    default_quantity = Column(Integer, default=1)
 
     item_template = relationship("ItemTemplate")
 

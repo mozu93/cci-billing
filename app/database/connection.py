@@ -44,6 +44,12 @@ def _migrate(engine):
                 "ALTER TABLE project_members ADD COLUMN address2 VARCHAR(300) DEFAULT ''"))
             conn.commit()
 
+        pt_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(project_templates)"))}
+        if "default_quantity" not in pt_cols:
+            conn.execute(text(
+                "ALTER TABLE project_templates ADD COLUMN default_quantity INTEGER DEFAULT 1"))
+            conn.commit()
+
         iss_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(issuances)"))}
         for col, ddl in [
             ("member_number",        "VARCHAR(50) DEFAULT ''"),
@@ -54,6 +60,26 @@ def _migrate(engine):
         ]:
             if col not in iss_cols:
                 conn.execute(text(f"ALTER TABLE issuances ADD COLUMN {col} {ddl}"))
+                conn.commit()
+
+        cs_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(company_settings)"))}
+        if "is_default" not in cs_cols:
+            conn.execute(text(
+                "ALTER TABLE company_settings ADD COLUMN is_default BOOLEAN DEFAULT 0"))
+            # 既存の最初のレコードをデフォルトに設定
+            conn.execute(text(
+                "UPDATE company_settings SET is_default = 1 "
+                "WHERE id = (SELECT MIN(id) FROM company_settings)"))
+            conn.commit()
+
+        proj_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(projects)"))}
+        for col, ddl in [
+            ("company_settings_id", "INTEGER REFERENCES company_settings(id)"),
+            ("bank_account_id",     "INTEGER REFERENCES bank_accounts(id)"),
+            ("seal_image_id",       "INTEGER REFERENCES seal_images(id)"),
+        ]:
+            if col not in proj_cols:
+                conn.execute(text(f"ALTER TABLE projects ADD COLUMN {col} {ddl}"))
                 conn.commit()
 
 
