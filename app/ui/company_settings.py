@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QMessageBox, QHeaderView, QDialog,
     QFileDialog, QLabel, QCheckBox
 )
-from PyQt6.QtCore import Qt
+
 from app.database.connection import get_session
 from app.database.models import CompanySettings, BankAccount, SealImage
 
@@ -43,7 +43,8 @@ class CompanySettingsWidget(QWidget):
         self._issuer_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._issuer_table.setMaximumHeight(160)
         self._issuer_table.currentCellChanged.connect(
-            lambda cur_row, _cc, _pr, _pc: self._on_issuer_selected(cur_row))
+            lambda cur_row, _cc, prev_row, _pc: (
+                self._on_issuer_selected(cur_row) if cur_row != prev_row else None))
         grp1_layout.addWidget(self._issuer_table)
 
         btn_row1 = QHBoxLayout()
@@ -208,18 +209,15 @@ class CompanySettingsWidget(QWidget):
     def _add_issuer(self):
         dlg = IssuerEditDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
+            new_id = getattr(dlg, '_saved_id', None)
             session = get_session()
             try:
                 count = session.query(CompanySettings).count()
-                if count == 1:
-                    cs = session.query(CompanySettings).first()
-                    cs.is_default = True
-                    session.commit()
-                    new_id = cs.id
-                else:
-                    cs = session.query(CompanySettings).order_by(
-                        CompanySettings.id.desc()).first()
-                    new_id = cs.id if cs else None
+                if count == 1 and new_id:
+                    cs = session.get(CompanySettings, new_id)
+                    if cs:
+                        cs.is_default = True
+                        session.commit()
             finally:
                 session.close()
             self._load_issuers(select_id=new_id)
@@ -469,6 +467,7 @@ class IssuerEditDialog(QDialog):
             cs.invoice_reg_number = self._t_number.text().strip()
             cs.print_seal         = self._print_seal.isChecked()
             session.commit()
+            self._saved_id = cs.id
         finally:
             session.close()
         self.accept()
