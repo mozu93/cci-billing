@@ -46,7 +46,7 @@ def get_issuer_for_project(session, project) -> tuple:
 
     戻り値: (CompanySettings | None, BankAccount | None, SealImage | None)
     """
-    from app.database.models import CompanySettings, BankAccount, SealImage
+    from app.database.models import SealImage
 
     # 1. 発行元を解決
     company = None

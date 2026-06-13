@@ -77,3 +77,26 @@ def test_get_issuer_for_project_project_none_falls_back(db_session):
 
     company, _, _ = get_issuer_for_project(db_session, None)
     assert company.id == cs.id
+
+
+def test_get_issuer_for_project_uses_project_seal(db_session):
+    from app.utils.pdf_helpers import get_issuer_for_project
+
+    cs = CompanySettings(name="会社", is_default=True, print_seal=True)
+    db_session.add(cs)
+    db_session.commit()
+
+    seal_default = SealImage(company_id=cs.id, label="デフォルト印鑑",
+                             path="/tmp/default.png", is_default=True)
+    seal_project = SealImage(company_id=cs.id, label="プロジェクト印鑑",
+                             path="/tmp/project.png", is_default=False)
+    db_session.add_all([seal_default, seal_project])
+    db_session.commit()
+
+    proj = Project(name="PJ", fiscal_year=2026, project_type="list",
+                   seal_image_id=seal_project.id)
+    db_session.add(proj)
+    db_session.commit()
+
+    _, _, seal = get_issuer_for_project(db_session, proj)
+    assert seal.id == seal_project.id  # プロジェクト固有の印鑑が使われること
