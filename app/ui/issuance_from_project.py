@@ -21,7 +21,8 @@ COL_NUM  = 1   # 会員番号
 COL_ORG  = 2   # 事業所名
 COL_KANA = 3   # フリガナ
 COL_REP  = 4   # 代表者名
-# 数量列: 5 〜 5+len(templates)-1
+COL_PROJ = 5   # 件名（すべて選択時専用）
+# 数量列: 5 〜 5+len(templates)-1  ※件名選択時
 # 請求書列 = 5+len(templates)、領収書列 = 6+len(templates) — テンプレート数で可変
 
 
@@ -92,12 +93,16 @@ class IssuanceFromProjectWidget(QWidget):
         self._load_projects()
 
     @property
+    def _is_all_mode(self) -> bool:
+        return self._proj_combo.count() > 0 and self._proj_combo.currentData() is None
+
+    @property
     def _col_inv(self) -> int:
-        return 5 + len(self._templates)
+        return 6 if self._is_all_mode else 5 + len(self._templates)
 
     @property
     def _col_rcp(self) -> int:
-        return 6 + len(self._templates)
+        return 7 if self._is_all_mode else 6 + len(self._templates)
 
     def _build(self):
         layout = QVBoxLayout(self)
@@ -140,14 +145,11 @@ class IssuanceFromProjectWidget(QWidget):
         # ── ボタン行（テーブルの上） ──────────────────────────────────
         label = "請求書" if self._doc_type == "invoice" else "領収書"
         btn_row = QHBoxLayout()
-        self._btn_issue = QPushButton(f"選択行に{label}を発行")
+        self._btn_issue = QPushButton(f"選択した{label}を発行")
         self._btn_issue.clicked.connect(self._issue_checked)
-        self._btn_issue_all = QPushButton(f"全員に{label}を発行")
-        self._btn_issue_all.clicked.connect(self._issue_all)
         self._delivery_combo = QComboBox()
-        self._delivery_combo.addItems(["窓口手渡し", "郵送", "メール送付", "その他"])
+        self._delivery_combo.addItems(["窓口手渡し", "郵送", "メール送付"])
         btn_row.addWidget(self._btn_issue)
-        btn_row.addWidget(self._btn_issue_all)
         btn_row.addWidget(QLabel("配付方法："))
         btn_row.addWidget(self._delivery_combo)
         btn_row.addSpacing(16)
@@ -183,12 +185,16 @@ class IssuanceFromProjectWidget(QWidget):
             layout.addLayout(opts_row)
 
         self._table = _CheckableTable(0, 7)
-        hdr_item = QTableWidgetItem()
-        hdr_item.setCheckState(Qt.CheckState.Unchecked)
-        self._table.setHorizontalHeaderItem(COL_CHK, hdr_item)
         self._table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         self._table.horizontalHeader().setSortIndicatorShown(True)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.cellDoubleClicked.connect(self._on_row_double_clicked)
+        # ヘッダー左端に本物のチェックボックスを配置
+        self._header_chk = QCheckBox(self._table.horizontalHeader())
+        self._header_chk.setTristate(False)
+        self._header_chk.toggled.connect(self._on_header_checkbox_toggled)
+        self._table.horizontalHeader().sectionResized.connect(
+            lambda _l, _o, _n: self._reposition_header_chk())
         self._table.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._table.setVerticalScrollBarPolicy(
@@ -200,67 +206,101 @@ class IssuanceFromProjectWidget(QWidget):
         layout.addWidget(self._status_label)
 
     def _setup_table_columns(self):
-        n = len(self._templates)
-        self._table.setColumnCount(7 + n)
-        headers = ["", "会員番号", "事業所名", "フリガナ", "代表者名"]
-        for tmpl in self._templates:
-            headers.append(f"{tmpl['name']}\n数量")
-        headers += ["請求書", "領収書"]
-        self._table.setHorizontalHeaderLabels(headers)
-
         hdr = self._table.horizontalHeader()
-        fixed = QHeaderView.ResizeMode.Fixed
+        fixed       = QHeaderView.ResizeMode.Fixed
         interactive = QHeaderView.ResizeMode.Interactive
-        hdr.setSectionResizeMode(COL_CHK,  fixed);      self._table.setColumnWidth(COL_CHK,  30)
-        hdr.setSectionResizeMode(COL_NUM,  interactive); self._table.setColumnWidth(COL_NUM,  80)
-        hdr.setSectionResizeMode(COL_ORG,  interactive); self._table.setColumnWidth(COL_ORG, 180)
-        hdr.setSectionResizeMode(COL_KANA, interactive); self._table.setColumnWidth(COL_KANA,140)
-        hdr.setSectionResizeMode(COL_REP,  interactive); self._table.setColumnWidth(COL_REP, 100)
-        for col in range(5, 5 + n):
-            hdr.setSectionResizeMode(col, interactive)
-            self._table.setColumnWidth(col, 120)
-        for col in (self._col_inv, self._col_rcp):
-            hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        rtc         = QHeaderView.ResizeMode.ResizeToContents
+
+        if self._is_all_mode:
+            self._table.setColumnCount(8)
+            self._table.setHorizontalHeaderLabels(
+                ["", "会員番号", "事業所名", "フリガナ", "代表者名", "件名", "請求書", "領収書"])
+            hdr.setSectionResizeMode(COL_CHK,  fixed);      self._table.setColumnWidth(COL_CHK,  30)
+            hdr.setSectionResizeMode(COL_NUM,  interactive); self._table.setColumnWidth(COL_NUM,  80)
+            hdr.setSectionResizeMode(COL_ORG,  interactive); self._table.setColumnWidth(COL_ORG, 180)
+            hdr.setSectionResizeMode(COL_KANA, interactive); self._table.setColumnWidth(COL_KANA,140)
+            hdr.setSectionResizeMode(COL_REP,  interactive); self._table.setColumnWidth(COL_REP, 100)
+            hdr.setSectionResizeMode(COL_PROJ, interactive); self._table.setColumnWidth(COL_PROJ,200)
+            hdr.setSectionResizeMode(6, rtc)
+            hdr.setSectionResizeMode(7, rtc)
+        else:
+            n = len(self._templates)
+            self._table.setColumnCount(7 + n)
+            headers = ["", "会員番号", "事業所名", "フリガナ", "代表者名"]
+            for tmpl in self._templates:
+                headers.append(f"{tmpl['name']}\n数量")
+            headers += ["請求書", "領収書"]
+            self._table.setHorizontalHeaderLabels(headers)
+            hdr.setSectionResizeMode(COL_CHK,  fixed);      self._table.setColumnWidth(COL_CHK,  30)
+            hdr.setSectionResizeMode(COL_NUM,  interactive); self._table.setColumnWidth(COL_NUM,  80)
+            hdr.setSectionResizeMode(COL_ORG,  interactive); self._table.setColumnWidth(COL_ORG, 180)
+            hdr.setSectionResizeMode(COL_KANA, interactive); self._table.setColumnWidth(COL_KANA,140)
+            hdr.setSectionResizeMode(COL_REP,  interactive); self._table.setColumnWidth(COL_REP, 100)
+            for col in range(5, 5 + n):
+                hdr.setSectionResizeMode(col, interactive)
+                self._table.setColumnWidth(col, 120)
+            for col in (self._col_inv, self._col_rcp):
+                hdr.setSectionResizeMode(col, rtc)
 
         hdr.setSortIndicator(
             self._sort_col,
             Qt.SortOrder.AscendingOrder if self._sort_asc else Qt.SortOrder.DescendingOrder)
+        self._reposition_header_chk()
 
     # ── ヘッダークリック：全選択 / 全解除 ─────────────────────────
 
     def _on_header_clicked(self, col: int):
         if col == COL_CHK:
-            hdr = self._table.horizontalHeaderItem(COL_CHK)
-            if hdr is None:
-                return
-            new_state = (Qt.CheckState.Unchecked
-                         if hdr.checkState() == Qt.CheckState.Checked
-                         else Qt.CheckState.Checked)
-            hdr.setCheckState(new_state)
-            self._table.blockSignals(True)
-            for r in range(self._table.rowCount()):
-                it = self._table.item(r, COL_CHK)
-                if it:
-                    it.setCheckState(new_state)
-            self._table.blockSignals(False)
+            return  # QCheckBox ウィジェットが処理
+        # 数量 SpinBox 列はソート対象外
+        qty_cols = set(range(5, 5 + len(self._templates)))
+        if col in qty_cols:
+            return
+        self._save_qty_cache()
+        if self._sort_col == col:
+            self._sort_asc = not self._sort_asc
         else:
-            # 数量 SpinBox 列はソート対象外
-            qty_cols = set(range(5, 5 + len(self._templates)))
-            if col in qty_cols:
+            self._sort_col = col
+            self._sort_asc = True
+        self._load_members()
+
+    def _reposition_header_chk(self):
+        hdr = self._table.horizontalHeader()
+        x = hdr.sectionViewportPosition(COL_CHK)
+        w = hdr.sectionSize(COL_CHK)
+        h = hdr.height()
+        chk = self._header_chk
+        chk.resize(chk.sizeHint())
+        chk.move(x + (w - chk.width()) // 2, (h - chk.height()) // 2)
+        chk.show()
+
+    def _on_header_checkbox_toggled(self, checked: bool):
+        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        self._table.blockSignals(True)
+        for r in range(self._table.rowCount()):
+            it = self._table.item(r, COL_CHK)
+            if it:
+                it.setCheckState(state)
+        self._table.blockSignals(False)
+
+    def _on_row_double_clicked(self, row: int, col: int):
+        if not self._is_all_mode:
+            return
+        proj_item = self._table.item(row, COL_PROJ)
+        if not proj_item:
+            return
+        proj_name = proj_item.text()
+        for i in range(self._proj_combo.count()):
+            if self._proj_combo.itemText(i) == proj_name:
+                self._proj_combo.setCurrentIndex(i)
                 return
-            self._save_qty_cache()
-            if self._sort_col == col:
-                self._sort_asc = not self._sort_asc
-            else:
-                self._sort_col = col
-                self._sort_asc = True
-            self._load_members()
 
     # ── プロジェクト読み込み ───────────────────────────────────────
 
     def showEvent(self, event):
         super().showEvent(event)
         self._load_projects()
+        self._reposition_header_chk()
 
     def _load_projects(self):
         session = get_session()
@@ -309,6 +349,7 @@ class IssuanceFromProjectWidget(QWidget):
         sel_year = self._year_combo.currentData()
         sel_cat  = self._cat_combo.currentData()
         current_id = self._proj_combo.currentData()
+        is_first_load = self._proj_combo.count() == 0
         self._proj_combo.blockSignals(True)
         self._proj_combo.clear()
         self._proj_combo.addItem("すべて", None)
@@ -318,16 +359,23 @@ class IssuanceFromProjectWidget(QWidget):
             if sel_cat is not None and p.category_id != sel_cat:
                 continue
             self._proj_combo.addItem(p.name, p.id)
-        for i in range(self._proj_combo.count()):
-            if self._proj_combo.itemData(i) == current_id:
-                self._proj_combo.setCurrentIndex(i)
-                break
+        if is_first_load:
+            # 初回：最初のプロジェクトを自動選択（あれば）
+            if self._proj_combo.count() > 1:
+                self._proj_combo.setCurrentIndex(1)
+        else:
+            # 以前の選択を復元（current_id が None なら「すべて」のまま）
+            for i in range(self._proj_combo.count()):
+                if self._proj_combo.itemData(i) == current_id:
+                    self._proj_combo.setCurrentIndex(i)
+                    break
         self._proj_combo.blockSignals(False)
         self._on_project_changed()
 
     def _on_project_changed(self):
         project_id = self._proj_combo.currentData()
-        if project_id is None:
+        is_all = project_id is None
+        if is_all:
             self._templates = []
         else:
             session = get_session()
@@ -339,6 +387,9 @@ class IssuanceFromProjectWidget(QWidget):
                 ]
             finally:
                 session.close()
+        for btn in (self._btn_issue, self._btn_export_xlsx, self._btn_import_xlsx):
+            btn.setEnabled(not is_all)
+        self._btn_issue.setToolTip("件名を選択すると発行できます" if is_all else "")
         self._setup_table_columns()
         self._load_members()
 
@@ -354,47 +405,57 @@ class IssuanceFromProjectWidget(QWidget):
 
     def _load_members(self):
         project_id = self._proj_combo.currentData()
-        if project_id is None:
-            self._table.setRowCount(0)
-            return
-        query = self._search.text().strip().lower()
+        query    = self._search.text().strip().lower()
         show_all = self._filter_combo.currentIndex() == 1
         doc_type = self._doc_type
+        is_all   = self._is_all_mode
+
+        if is_all:
+            project_ids   = [self._proj_combo.itemData(i)
+                             for i in range(self._proj_combo.count())
+                             if self._proj_combo.itemData(i) is not None]
+            proj_name_map = {self._proj_combo.itemData(i): self._proj_combo.itemText(i)
+                             for i in range(1, self._proj_combo.count())}
+        else:
+            project_ids   = [project_id]
+            proj_name_map = {}
+
         session = get_session()
         try:
-            pms = get_project_members(session, project_id)
             from app.database.models import Issuance
             pm_data = []
-            for pm in pms:
-                inv = (session.query(Issuance)
-                       .filter_by(project_member_id=pm.id, doc_type="invoice")
-                       .order_by(Issuance.created_at.desc())
-                       .first())
-                rcp = (session.query(Issuance)
-                       .filter_by(project_member_id=pm.id, doc_type="receipt")
-                       .order_by(Issuance.created_at.desc())
-                       .first())
-                voided = inv is None and rcp is not None
-                sel = inv if doc_type == "invoice" else rcp
-                sel_status = sel.status if sel else "未発行"
-                hide_issued = sel_status in ("発行済み", "支払済み")
-                hide_voided = doc_type == "invoice" and voided
-                if not show_all and (hide_issued or hide_voided):
-                    continue
-                if query:
-                    targets = [
-                        pm.organization_name or "",
-                        pm.representative_name or "",
-                        pm.organization_kana or "",
-                    ]
-                    if not any(query in t.lower() for t in targets):
+            for pid in project_ids:
+                for pm in get_project_members(session, pid):
+                    inv = (session.query(Issuance)
+                           .filter_by(project_member_id=pm.id, doc_type="invoice")
+                           .order_by(Issuance.created_at.desc())
+                           .first())
+                    rcp = (session.query(Issuance)
+                           .filter_by(project_member_id=pm.id, doc_type="receipt")
+                           .order_by(Issuance.created_at.desc())
+                           .first())
+                    voided = inv is None and rcp is not None
+                    sel = inv if doc_type == "invoice" else rcp
+                    sel_status = sel.status if sel else "未発行"
+                    hide_issued = sel_status in ("発行済み", "支払済み")
+                    hide_voided = doc_type == "invoice" and voided
+                    if not show_all and (hide_issued or hide_voided):
                         continue
-                inv_text = "無効" if voided else self._cell_text(inv)
-                pm_data.append((
-                    pm.id, pm,
-                    inv_text, self._cell_text(rcp),
-                    inv.id if inv else None, rcp.id if rcp else None,
-                ))
+                    if query:
+                        targets = [
+                            pm.organization_name or "",
+                            pm.representative_name or "",
+                            pm.organization_kana or "",
+                        ]
+                        if not any(query in t.lower() for t in targets):
+                            continue
+                    inv_text = "無効" if voided else self._cell_text(inv)
+                    pm_data.append((
+                        pm.id, pm,
+                        inv_text, self._cell_text(rcp),
+                        inv.id if inv else None, rcp.id if rcp else None,
+                        proj_name_map.get(pid, ""),
+                    ))
         finally:
             session.close()
 
@@ -404,24 +465,25 @@ class IssuanceFromProjectWidget(QWidget):
         sc = self._sort_col
 
         def _key(item):
-            _, pm, inv_text, rcp_text, _, _ = item
-            if sc == COL_NUM:   return pm.member_number or ""
-            if sc == COL_ORG:   return pm.organization_name or ""
-            if sc == COL_KANA:  return pm.organization_kana or ""
-            if sc == COL_REP:   return pm.representative_name or ""
-            if sc == col_inv:   return inv_text
-            if sc == col_rcp:   return rcp_text
+            _, pm, inv_text, rcp_text, _, _, proj_name = item
+            if sc == COL_NUM:                  return pm.member_number or ""
+            if sc == COL_ORG:                  return pm.organization_name or ""
+            if sc == COL_KANA:                 return pm.organization_kana or ""
+            if sc == COL_REP:                  return pm.representative_name or ""
+            if is_all and sc == COL_PROJ:      return proj_name
+            if sc == col_inv:                  return inv_text
+            if sc == col_rcp:                  return rcp_text
             return ""
 
         pm_data.sort(key=_key, reverse=not self._sort_asc)
 
         self._table._last_checked_row = -1
-        hdr_item = self._table.horizontalHeaderItem(COL_CHK)
-        if hdr_item:
-            hdr_item.setCheckState(Qt.CheckState.Unchecked)
+        self._header_chk.blockSignals(True)
+        self._header_chk.setChecked(False)
+        self._header_chk.blockSignals(False)
 
         self._table.setRowCount(0)
-        for pm_id, pm, inv_text, rcp_text, inv_id, rcp_id in pm_data:
+        for pm_id, pm, inv_text, rcp_text, inv_id, rcp_id, proj_name in pm_data:
             row = self._table.rowCount()
             self._table.insertRow(row)
 
@@ -431,14 +493,16 @@ class IssuanceFromProjectWidget(QWidget):
             self._table.setItem(row, COL_CHK, chk_item)
 
             row_data = (pm_id, inv_id, rcp_id)
-            for col, val in [
+            fixed_cols = [
                 (COL_NUM,  pm.member_number or ""),
                 (COL_ORG,  pm.organization_name or ""),
                 (COL_KANA, pm.organization_kana or ""),
                 (COL_REP,  pm.representative_name or ""),
-                (col_inv,  inv_text),
-                (col_rcp,  rcp_text),
-            ]:
+            ]
+            if is_all:
+                fixed_cols.append((COL_PROJ, proj_name))
+            fixed_cols += [(col_inv, inv_text), (col_rcp, rcp_text)]
+            for col, val in fixed_cols:
                 it = QTableWidgetItem(val)
                 it.setData(Qt.ItemDataRole.UserRole, row_data)
                 self._table.setItem(row, col, it)
@@ -764,9 +828,12 @@ class IssuanceFromProjectWidget(QWidget):
                         session.commit()
 
                     try:
+                        from app.database.models import Project as _Project
+                        _proj = session.get(_Project, iss.project_id)
                         path = generate_and_open(iss, session, due_date=due_date,
                                                  open_file=open_each,
-                                                 window_envelope=window_envelope)
+                                                 window_envelope=window_envelope,
+                                                 project=_proj)
                         if path:
                             pdf_paths.append(path)
                     except Exception as e:

@@ -319,7 +319,10 @@ class ReissueWidget(QWidget):
                 if opts.exec() != QDialog.DialogCode.Accepted:
                     return
                 due_date = opts.due_date()
-            generate_and_open(iss, session, reissue=True, due_date=due_date)
+            from app.database.models import Project as _Project
+            _proj = session.get(_Project, iss.project_id)
+            generate_and_open(iss, session, reissue=True, due_date=due_date,
+                              project=_proj)
             _lbl = "請求書" if iss.doc_type == "invoice" else "領収書"
             add_log(session, "再発行", "issuance", iss.id,
                     f"{_lbl} {iss.doc_number} 宛先：{iss.recipient_organization or iss.recipient_name}")

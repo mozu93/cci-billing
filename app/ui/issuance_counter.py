@@ -21,6 +21,7 @@ W_CAT   = 150
 W_PRICE = 90
 W_QTY   = 80
 W_SUB   = 90
+W_SAVE  = 70
 W_DEL   = 40
 ROW_H   = 48
 FIELD_H = 26
@@ -80,6 +81,17 @@ class _LineRow(QFrame):
         self.sub_label.setFixedWidth(W_SUB)
         self.sub_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        # テンプレ登録
+        self.btn_save_tmpl = QPushButton("テンプレ登録")
+        self.btn_save_tmpl.setFixedSize(W_SAVE, FIELD_H)
+        self.btn_save_tmpl.setEnabled(False)
+        self.btn_save_tmpl.setToolTip("この行の品目名と単価をテンプレートマスタに登録します")
+        self.btn_save_tmpl.setStyleSheet(
+            "QPushButton { font-size: 10px; color: #1565c0;"
+            " border: 1px solid #1565c0; border-radius: 3px;"
+            " padding: 1px 3px; background: transparent; }"
+            "QPushButton:hover { background: #e3f2fd; }"
+            "QPushButton:disabled { color: #bbb; border-color: #ccc; }")
         # 削除
         self.btn_del = QPushButton("✕")
         self.btn_del.setFixedSize(W_DEL, FIELD_H)
@@ -98,6 +110,7 @@ class _LineRow(QFrame):
         lay.addWidget(self.price_edit)
         lay.addWidget(self.qty_spin)
         lay.addWidget(self.sub_label)
+        lay.addWidget(self.btn_save_tmpl)
         lay.addWidget(self.btn_del)
 
         # シグナル
@@ -105,9 +118,17 @@ class _LineRow(QFrame):
             lambda: self.panel._on_cat_changed(self))
         self.tmpl_combo.currentIndexChanged.connect(
             lambda: self.panel._on_tmpl_changed(self))
+        self.tmpl_combo.currentIndexChanged.connect(lambda: self._update_save_btn())
+        self.tmpl_combo.lineEdit().textChanged.connect(lambda: self._update_save_btn())
         self.price_edit.textChanged.connect(self.panel._update_total)
         self.qty_spin.valueChanged.connect(self.panel._update_total)
         self.btn_del.clicked.connect(lambda: self.panel._remove_row(self))
+
+    def _update_save_btn(self):
+        _PH = "（項目を選択または入力）"
+        is_direct = self.tmpl_combo.currentData() is None
+        text = self.tmpl_combo.currentText().strip()
+        self.btn_save_tmpl.setEnabled(is_direct and bool(text) and text != _PH)
 
     def price(self) -> int:
         try:
@@ -403,7 +424,7 @@ class IssuanceCounterWidget(QWidget):
         opts_form.setContentsMargins(10, 8, 10, 8)
         opts_form.setSpacing(8)
         self._delivery = QComboBox()
-        self._delivery.addItems(["窓口手渡し", "郵送", "メール送付", "その他"])
+        self._delivery.addItems(["窓口手渡し", "郵送", "メール送付"])
         opts_form.addRow("配付方法", self._delivery)
         if self._doc_type_str == "invoice":
             y, m = (date.today().year, date.today().month + 1) if date.today().month < 12 else (date.today().year + 1, 1)
@@ -473,7 +494,7 @@ class IssuanceCounterWidget(QWidget):
         btn_add.setFixedHeight(32)
         btn_add.clicked.connect(self._add_row)
         add_btn_row.addWidget(btn_add)
-        btn_new_cat = QPushButton("＋ 新規業務登録")
+        btn_new_cat = QPushButton("＋ 新規業務名登録")
         btn_new_cat.setFixedHeight(32)
         btn_new_cat.clicked.connect(self._add_category_master)
         add_btn_row.addWidget(btn_new_cat)
@@ -511,7 +532,7 @@ class IssuanceCounterWidget(QWidget):
         lay.setContentsMargins(6, 0, 6, 0)
         lay.setSpacing(6)
         specs = [("業務名", W_CAT), ("項目", None), ("単価（円）", W_PRICE),
-                 ("数量", W_QTY), ("小計", W_SUB), ("", W_DEL)]
+                 ("数量", W_QTY), ("小計", W_SUB), ("", W_SAVE), ("", W_DEL)]
         for text, w in specs:
             lbl = QLabel(text)
             lbl.setStyleSheet("font-weight: bold; color: #333; background: transparent;")
@@ -574,10 +595,46 @@ class IssuanceCounterWidget(QWidget):
     def _add_row(self):
         row = _LineRow(self)
         self._refresh_cat_combo(row.cat_combo)
+        row.btn_save_tmpl.clicked.connect(lambda: self._save_row_as_template(row))
         # stretch の直前に挿入
         self._rows_vbox.insertWidget(self._rows_vbox.count() - 1, row)
         self._rows.append(row)
         self._update_total()
+
+    def _save_row_as_template(self, row: "_LineRow"):
+        from app.ui.item_template_management import ItemTemplateDialog
+        _PH = "（項目を選択または入力）"
+        name = row.tmpl_combo.currentText().strip()
+        if not name or name == _PH:
+            QMessageBox.warning(self, "未入力", "項目名を入力してください。")
+            return
+        dlg = ItemTemplateDialog(
+            self,
+            default_category_id=row.cat_combo.currentData(),
+            default_name=name,
+            default_price=row.price(),
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        saved_name = dlg.result_name
+        self._reload_master()
+        # 登録したテンプレートをこの行で選択状態にする
+        new_tmpl = next((t for t in self._templates if t.name == saved_name), None)
+        if new_tmpl:
+            row.cat_combo.blockSignals(True)
+            for i in range(row.cat_combo.count()):
+                if row.cat_combo.itemData(i) == new_tmpl.category_id:
+                    row.cat_combo.setCurrentIndex(i)
+                    break
+            row.cat_combo.blockSignals(False)
+            self._refresh_tmpl_combo(row)
+            row.tmpl_combo.blockSignals(True)
+            for i in range(row.tmpl_combo.count()):
+                if row.tmpl_combo.itemData(i) == new_tmpl.id:
+                    row.tmpl_combo.setCurrentIndex(i)
+                    break
+            row.tmpl_combo.blockSignals(False)
+            row._update_save_btn()
 
     def _remove_row(self, row: _LineRow):
         if row not in self._rows:
@@ -875,11 +932,14 @@ class IssuanceCounterWidget(QWidget):
                     postal_code = self._postal_code_edit.text().strip()
                     address1    = self._address1_edit.text().strip()
                     address2    = self._address2_edit.text().strip()
+            from app.database.models import Project as _Project
+            _proj = session.get(_Project, iss.project_id)
             generate_and_open(iss, session, due_date=due_date,
                               window_envelope=window_envelope,
                               recipient_postal_code=postal_code,
                               recipient_address=address1,
-                              recipient_address2=address2)
+                              recipient_address2=address2,
+                              project=_proj)
             if self._delivery.currentText() == "メール送付":
                 from app.services.email_service import send_issuance_email
                 from app.services.operation_log_service import add_log
