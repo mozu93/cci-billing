@@ -321,7 +321,18 @@ class ReissueWidget(QWidget):
                 due_date = opts.due_date()
             from app.database.models import Project as _Project
             _proj = session.get(_Project, iss.project_id)
+            from PyQt6.QtWidgets import QFileDialog
+            from app.utils.pdf_helpers import get_pdf_output_dir
+            import os
+            _out_dir = get_pdf_output_dir()
+            _default_name = os.path.join(_out_dir, f"{iss.doc_number}_再発行.pdf")
+            _save_path, _ = QFileDialog.getSaveFileName(
+                self, "PDFの保存先を選択", _default_name, "PDF ファイル (*.pdf)"
+            )
+            if not _save_path:
+                return  # キャンセル時は何も変更せず終了
             generate_and_open(iss, session, reissue=True, due_date=due_date,
+                              save_path=_save_path,
                               project=_proj)
             _lbl = "請求書" if iss.doc_type == "invoice" else "領収書"
             add_log(session, "再発行", "issuance", iss.id,
