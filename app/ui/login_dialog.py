@@ -1,10 +1,8 @@
 # app/ui/login_dialog.py
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QPushButton, QMessageBox,
+    QLabel, QLineEdit, QPushButton, QMessageBox,
 )
-from PyQt6.QtCore import Qt
 from app.database.connection import get_session
 from app.services.staff_service import get_active_staff, get_staff, set_password, verify_password
 from app.utils import current_user
@@ -32,6 +30,8 @@ class _SetPasswordDialog(QDialog):
         layout.addWidget(msg)
 
         form = QFormLayout()
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
         self._pw1 = QLineEdit()
         self._pw1.setEchoMode(QLineEdit.EchoMode.Password)
         self._pw2 = QLineEdit()
@@ -126,6 +126,8 @@ class ChangePasswordDialog(QDialog):
         layout.addWidget(QLabel(f"「{staff_name}」のパスワードを変更します。"))
 
         form = QFormLayout()
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
         self._cur = QLineEdit()
         self._cur.setEchoMode(QLineEdit.EchoMode.Password)
         self._new1 = QLineEdit()
@@ -181,59 +183,69 @@ class LoginDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("ログイン")
-        self.setFixedSize(320, 400)
+        self.setFixedWidth(320)
         self._build()
 
     def _build(self):
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("担当者を選択してください"))
+        layout.setSpacing(10)
 
-        self._list = QListWidget()
-        session = get_session()
-        try:
-            for staff in get_active_staff(session):
-                item = QListWidgetItem(staff.name)
-                item.setData(Qt.ItemDataRole.UserRole, (staff.id, staff.name, bool(staff.is_admin)))
-                self._list.addItem(item)
-        finally:
-            session.close()
+        form = QFormLayout()
+        form.setVerticalSpacing(6)
+        form.setHorizontalSpacing(8)
 
-        self._list.itemDoubleClicked.connect(self._login)
-        layout.addWidget(self._list)
+        self._name_edit = QLineEdit()
+        self._name_edit.setPlaceholderText("担当者名")
+        self._pw_edit = QLineEdit()
+        self._pw_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._pw_edit.setPlaceholderText("パスワード")
+        self._pw_edit.returnPressed.connect(self._login)
 
+        form.addRow("ID：", self._name_edit)
+        form.addRow("パスワード：", self._pw_edit)
+        layout.addLayout(form)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
         btn = QPushButton("ログイン")
+        btn.setDefault(True)
         btn.clicked.connect(self._login)
-        layout.addWidget(btn)
+        btn_row.addWidget(btn)
+        layout.addLayout(btn_row)
 
     def _login(self):
-        item = self._list.currentItem()
-        if not item:
-            QMessageBox.warning(self, "選択エラー", "担当者を選択してください。")
+        name = self._name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "入力エラー", "IDを入力してください。")
             return
-        staff_id, staff_name, is_admin_flag = item.data(Qt.ItemDataRole.UserRole)
 
         session = get_session()
         try:
-            staff = get_staff(session, staff_id)
+            staff = next(
+                (s for s in get_active_staff(session) if s.name == name), None
+            )
             if staff is None:
+                QMessageBox.warning(self, "認証エラー", "IDまたはパスワードが違います。")
                 return
 
             if staff.password_hash is None:
                 # 初回：パスワード設定
-                dlg = _SetPasswordDialog(staff_name, self)
+                dlg = _SetPasswordDialog(staff.name, self)
                 if dlg.exec() != QDialog.DialogCode.Accepted:
                     return
-                set_password(session, staff_id, dlg.password())
+                set_password(session, staff.id, dlg.password())
             else:
-                # 通常：パスワード確認
-                dlg = _PasswordInputDialog(staff_name, self)
-                if dlg.exec() != QDialog.DialogCode.Accepted:
+                pw = self._pw_edit.text()
+                if not pw:
+                    QMessageBox.warning(self, "入力エラー", "パスワードを入力してください。")
                     return
-                if not verify_password(session, staff_id, dlg.password()):
-                    QMessageBox.warning(self, "認証エラー", "パスワードが違います。")
+                if not verify_password(session, staff.id, pw):
+                    QMessageBox.warning(self, "認証エラー", "IDまたはパスワードが違います。")
+                    self._pw_edit.clear()
+                    self._pw_edit.setFocus()
                     return
         finally:
             session.close()
 
-        current_user.set_current(staff_id, staff_name, is_admin_flag)
+        current_user.set_current(staff.id, staff.name, bool(staff.is_admin))
         self.accept()
