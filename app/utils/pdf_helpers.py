@@ -41,21 +41,66 @@ def get_default_seal(session, company):
     return seal
 
 
+def get_issuer_for_project(session, project) -> tuple:
+    """プロジェクト設定 → 発行元デフォルト → システムデフォルトの順に解決する。
+
+    戻り値: (CompanySettings | None, BankAccount | None, SealImage | None)
+    """
+    from app.database.models import CompanySettings, BankAccount, SealImage
+
+    # 1. 発行元を解決
+    company = None
+    if project is not None and getattr(project, "company_settings_id", None):
+        company = session.get(CompanySettings, project.company_settings_id)
+    if company is None:
+        company = (session.query(CompanySettings).filter_by(is_default=True).first()
+                   or session.query(CompanySettings).first())
+    if company is None:
+        return None, None, None
+
+    # 2. 銀行口座を解決
+    bank = None
+    if project is not None and getattr(project, "bank_account_id", None):
+        bank = session.get(BankAccount, project.bank_account_id)
+    if bank is None:
+        bank = (session.query(BankAccount)
+                .filter_by(company_id=company.id, is_default=True).first()
+                or session.query(BankAccount)
+                .filter_by(company_id=company.id).first())
+
+    # 3. 印鑑を解決（print_seal=False なら常に None）
+    seal = None
+    if getattr(company, "print_seal", True):
+        if project is not None and getattr(project, "seal_image_id", None):
+            seal = session.get(SealImage, project.seal_image_id)
+        if seal is None:
+            seal = (session.query(SealImage)
+                    .filter_by(company_id=company.id, is_default=True).first()
+                    or session.query(SealImage)
+                    .filter_by(company_id=company.id).first())
+
+    return company, bank, seal
+
+
 def generate_and_open(issuance, session, reissue: bool = False,
                       due_date=None, open_file: bool = True,
                       window_envelope: bool = False,
                       recipient_postal_code: str = "",
                       recipient_address: str = "",
-                      recipient_address2: str = "") -> str | None:
+                      recipient_address2: str = "",
+                      project=None) -> str | None:
     """発行データのPDFを生成し、open_file=True ならビューアで開く。
 
     一括発行時は open_file=False で生成だけ行い、
     呼び出し元で merge_and_open() にまとめて渡す。
     """
-    company, bank = get_company_and_bank(session)
+    if project is not None:
+        company, bank, seal = get_issuer_for_project(session, project)
+    else:
+        company, bank = get_company_and_bank(session)
+        seal = get_default_seal(session, company)
     if not company:
         return None
-    seal = get_default_seal(session, company)
     output_dir = get_pdf_output_dir()
 
     suffix = "_再発行" if reissue else ""
