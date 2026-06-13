@@ -939,6 +939,7 @@ class IssuanceCounterWidget(QWidget):
             from app.utils.pdf_helpers import get_pdf_output_dir
             _delivery_text = self._delivery.currentText()
             _save_path: str | None = None
+            # 発行・修正再発行どちらも保存先を選択させる（PDF再生成のたびに保存先を確認）
             if _delivery_text != "メール送付":
                 _out_dir = get_pdf_output_dir()
                 _default_name = os.path.join(_out_dir, f"{iss.doc_number}.pdf")

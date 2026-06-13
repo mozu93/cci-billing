@@ -1,4 +1,5 @@
 # app/ui/reissue_tab.py
+import os
 from datetime import date
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
@@ -323,7 +324,6 @@ class ReissueWidget(QWidget):
             _proj = session.get(_Project, iss.project_id)
             from PyQt6.QtWidgets import QFileDialog
             from app.utils.pdf_helpers import get_pdf_output_dir
-            import os
             _out_dir = get_pdf_output_dir()
             _default_name = os.path.join(_out_dir, f"{iss.doc_number}_再発行.pdf")
             _save_path, _ = QFileDialog.getSaveFileName(
