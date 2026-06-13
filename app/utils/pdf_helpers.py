@@ -88,7 +88,8 @@ def generate_and_open(issuance, session, reissue: bool = False,
                       recipient_postal_code: str = "",
                       recipient_address: str = "",
                       recipient_address2: str = "",
-                      project=None) -> str | None:
+                      project=None,
+                      save_path: str | None = None) -> str | None:
     """発行データのPDFを生成し、open_file=True ならビューアで開く。
 
     一括発行時は open_file=False で生成だけ行い、
@@ -105,7 +106,7 @@ def generate_and_open(issuance, session, reissue: bool = False,
 
     suffix = "_再発行" if reissue else ""
     if issuance.doc_type == "invoice":
-        path = os.path.join(output_dir, f"{issuance.doc_number}{suffix}.pdf")
+        path = save_path or os.path.join(output_dir, f"{issuance.doc_number}{suffix}.pdf")
         from app.services.pdf.invoice_pdf import generate_invoice_pdf
         postal_code = address = address2 = ""
         if window_envelope and issuance.project_member_id:
@@ -146,7 +147,7 @@ def generate_and_open(issuance, session, reissue: bool = False,
         return path
 
     # 領収書（A5縦・原本+控え）
-    path = os.path.join(output_dir, f"{issuance.doc_number}{suffix}.pdf")
+    path = save_path or os.path.join(output_dir, f"{issuance.doc_number}{suffix}.pdf")
     from app.services.pdf.receipt_pdf import generate_receipt_pdf
     generate_receipt_pdf(issuance, company, path,
                          seal_image=seal, reissue=reissue)
@@ -158,7 +159,8 @@ def generate_and_open(issuance, session, reissue: bool = False,
     return path
 
 
-def merge_and_open(paths: list[str], base_name: str) -> str | None:
+def merge_and_open(paths: list[str], base_name: str,
+                   output_dir: str | None = None) -> str | None:
     """複数PDFを1ファイルに結合して開く（連続印刷用）。
 
     pypdf が無い環境では結合せず出力フォルダを開く。
@@ -167,7 +169,8 @@ def merge_and_open(paths: list[str], base_name: str) -> str | None:
     paths = [p for p in paths if p and os.path.exists(p)]
     if not paths:
         return None
-    output_dir = get_pdf_output_dir()
+    if output_dir is None:
+        output_dir = get_pdf_output_dir()
     from app.services.print_service import open_pdf
     try:
         from pypdf import PdfWriter
