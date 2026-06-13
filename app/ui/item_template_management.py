@@ -124,18 +124,29 @@ class ItemTemplateManagementWidget(QWidget):
 
 class ItemTemplateDialog(QDialog):
     def __init__(self, parent=None, template: ItemTemplate | None = None,
-                 default_category_id: int | None = None):
+                 default_category_id: int | None = None,
+                 default_name: str | None = None,
+                 default_price: int | None = None):
         super().__init__(parent)
         self._template = template
         self.setWindowTitle("請求項目テンプレート編集" if template else "請求項目テンプレート登録")
-        self.setFixedSize(400, 360)
+        self.setFixedSize(400, 280)
         self._build()
         if template:
             self._populate(template)
-        elif default_category_id is not None:
-            idx = self._category.findData(default_category_id)
-            if idx >= 0:
-                self._category.setCurrentIndex(idx)
+        else:
+            if default_category_id is not None:
+                idx = self._category.findData(default_category_id)
+                if idx >= 0:
+                    self._category.setCurrentIndex(idx)
+            if default_name:
+                self._name.setText(default_name)
+            if default_price is not None:
+                self._unit_price.setValue(default_price)
+
+    @property
+    def result_name(self) -> str:
+        return self._name.text().strip()
 
     def _build(self):
         layout = QVBoxLayout(self)
@@ -150,26 +161,22 @@ class ItemTemplateDialog(QDialog):
             session.close()
 
         self._name = QLineEdit()
+        self._name.setFixedHeight(26)
         self._name.setPlaceholderText("例：青年部会費")
         self._unit_price = QSpinBox()
         self._unit_price.setRange(0, 9999999)
+        self._unit_price.setFixedHeight(26)
         self._unit = QLineEdit("式")
+        self._unit.setFixedHeight(26)
         self._tax_rate = QComboBox()
         for label, value in TAX_RATE_OPTIONS:
             self._tax_rate.addItem(label, value)
-        self._doc_type = QComboBox()
-        for label, value in DOC_TYPE_OPTIONS:
-            self._doc_type.addItem(label, value)
-        self._description = QLineEdit()
-        self._description.setPlaceholderText("但し書き（領収書に使用）")
 
         form.addRow("業務名", self._category)
-        form.addRow("項目名", self._name)
+        form.addRow("項目名 / 但し書き", self._name)
         form.addRow("単価（円）", self._unit_price)
         form.addRow("単位", self._unit)
         form.addRow("税区分", self._tax_rate)
-        form.addRow("書類種別", self._doc_type)
-        form.addRow("但し書き", self._description)
         layout.addLayout(form)
 
         btn_row = QHBoxLayout()
@@ -191,10 +198,6 @@ class ItemTemplateDialog(QDialog):
         idx = self._tax_rate.findData(tmpl.tax_rate)
         if idx >= 0:
             self._tax_rate.setCurrentIndex(idx)
-        idx = self._doc_type.findData(tmpl.doc_type)
-        if idx >= 0:
-            self._doc_type.setCurrentIndex(idx)
-        self._description.setText(tmpl.description or "")
 
     def _save(self):
         name = self._name.text().strip()
@@ -208,6 +211,7 @@ class ItemTemplateDialog(QDialog):
             return
         session = get_session()
         try:
+            unit = self._unit.text().strip() or "式"
             if self._template:
                 update_item_template(
                     session,
@@ -215,10 +219,10 @@ class ItemTemplateDialog(QDialog):
                     category_id=self._category.currentData(),
                     name=name,
                     unit_price=self._unit_price.value(),
-                    unit=self._unit.text().strip() or "式",
+                    unit=unit,
                     tax_rate=self._tax_rate.currentData(),
-                    doc_type=self._doc_type.currentData(),
-                    description=self._description.text().strip(),
+                    doc_type="both",
+                    description=name,
                 )
             else:
                 create_item_template(
@@ -226,10 +230,10 @@ class ItemTemplateDialog(QDialog):
                     category_id=self._category.currentData(),
                     name=name,
                     unit_price=self._unit_price.value(),
-                    unit=self._unit.text().strip() or "式",
+                    unit=unit,
                     tax_rate=self._tax_rate.currentData(),
-                    doc_type=self._doc_type.currentData(),
-                    description=self._description.text().strip(),
+                    doc_type="both",
+                    description=name,
                 )
         except Exception as e:
             QMessageBox.critical(self, "保存エラー", str(e))

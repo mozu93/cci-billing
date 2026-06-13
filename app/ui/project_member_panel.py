@@ -3,18 +3,27 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QHeaderView, QMessageBox, QDialog,
     QFormLayout, QLineEdit, QComboBox,
-    QDialogButtonBox, QStyledItemDelegate
+    QDialogButtonBox, QStyledItemDelegate, QCheckBox
 )
 from PyQt6.QtCore import Qt
+from app.database.connection import get_session
+from app.database.models import ProjectMember
+from app.services.project_service import (
+    get_project_members, add_roster_entries, remove_member_from_project,
+    copy_roster_from_project, get_projects
+)
+
+COL_CHK = 0  # チェックボックス列
 
 
 class _CompactDelegate(QStyledItemDelegate):
     """インライン編集エディタのジオメトリをセル矩形に固定する。"""
 
     def createEditor(self, parent, option, index):
+        if index.column() == COL_CHK:
+            return None
         editor = super().createEditor(parent, option, index)
         if editor is not None:
-            # グローバルスタイルの min-height を無効化してセル高に収める
             editor.setStyleSheet(
                 "QLineEdit { min-height: 0; padding: 1px 6px; "
                 "border: 1.5px solid #3B82F6; border-radius: 3px; }"
@@ -23,19 +32,31 @@ class _CompactDelegate(QStyledItemDelegate):
 
     def updateEditorGeometry(self, editor, option, index):
         editor.setGeometry(option.rect)
-from app.database.connection import get_session
-from app.database.models import ProjectMember
-from app.services.project_service import (
-    get_project_members, add_roster_entries, remove_member_from_project,
-    copy_roster_from_project, get_projects
-)
 
-# 列インデックス → フィールド名（None は編集不可列）
+
+# col 0 = チェックボックス（None=編集不可）、以降は元の順
 _COL_FIELDS = [
+    None,            # チェックボックス
     "member_number", "organization_name", "organization_kana",
     "representative_name", "representative_kana", "department",
     "postal_code", "address", "address2", "phone", "email",
-    None,  # 登録日
+    None,            # 登録日
+]
+
+COLS = [
+    ("",             28),
+    ("会員番号",       80),
+    ("事業所名",      180),
+    ("フリガナ",      160),
+    ("氏名",          100),
+    ("氏名フリガナ",  130),
+    ("所属・役職名",  120),
+    ("郵便番号",       80),
+    ("住所１",        200),
+    ("住所２",        140),
+    ("電話",          110),
+    ("メール",        180),
+    ("登録日",         90),
 ]
 
 
@@ -76,7 +97,6 @@ class RosterEntryDialog(QDialog):
             QDialogButtonBox.StandardButton.Save |
             QDialogButtonBox.StandardButton.Cancel
         )
-        # ラベルを日本語化
         save_btn = buttons.button(QDialogButtonBox.StandardButton.Save)
         save_btn.setText("保存")
         cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
@@ -161,27 +181,13 @@ class ProjectMemberPanel(QWidget):
         btn_copy.clicked.connect(self._copy_from_project)
         btn_import = QPushButton("取り込み（Excel/貼り付け）")
         btn_import.clicked.connect(self._open_import)
-        btn_del = QPushButton("削除")
-        btn_del.clicked.connect(self._remove)
-        for b in [btn_add, btn_edit, btn_copy, btn_import, btn_del]:
+        self._btn_del = QPushButton("選択削除")
+        self._btn_del.clicked.connect(self._remove_checked)
+        for b in [btn_add, btn_edit, btn_copy, btn_import, self._btn_del]:
             btn_row.addWidget(b)
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        COLS = [
-            ("会員番号",       80),
-            ("事業所名",      180),
-            ("フリガナ",      160),
-            ("氏名",          100),
-            ("氏名フリガナ",  130),
-            ("所属・役職名",  120),
-            ("郵便番号",       80),
-            ("住所１",        200),
-            ("住所２",        140),
-            ("電話",          110),
-            ("メール",        180),
-            ("登録日",         90),
-        ]
         self._table = QTableWidget(0, len(COLS))
         self._table.setHorizontalHeaderLabels([c[0] for c in COLS])
         hdr = self._table.horizontalHeader()
@@ -203,6 +209,32 @@ class ProjectMemberPanel(QWidget):
         self._count_label = QLabel("")
         layout.addWidget(self._count_label)
 
+        # ヘッダーチェックボックス（全選択／全解除）
+        self._header_chk = QCheckBox(self._table.horizontalHeader())
+        self._header_chk.setToolTip("全選択 / 全解除")
+        self._header_chk.toggled.connect(self._on_header_chk_toggled)
+        hdr.sectionResized.connect(lambda *_: self._reposition_header_chk())
+        self._reposition_header_chk()
+
+    def _reposition_header_chk(self):
+        hdr = self._table.horizontalHeader()
+        x = hdr.sectionPosition(COL_CHK)
+        w = hdr.sectionSize(COL_CHK)
+        h = hdr.height()
+        cb_w = self._header_chk.sizeHint().width()
+        cb_h = self._header_chk.sizeHint().height()
+        self._header_chk.move(x + (w - cb_w) // 2, (h - cb_h) // 2)
+        self._header_chk.raise_()
+
+    def _on_header_chk_toggled(self, checked: bool):
+        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        self._table.blockSignals(True)
+        for row in range(self._table.rowCount()):
+            item = self._table.item(row, COL_CHK)
+            if item:
+                item.setCheckState(state)
+        self._table.blockSignals(False)
+
     def _load(self):
         session = get_session()
         try:
@@ -212,6 +244,11 @@ class ProjectMemberPanel(QWidget):
         self._table.blockSignals(True)
         self._table.setSortingEnabled(False)
         self._table.setRowCount(0)
+
+        self._header_chk.blockSignals(True)
+        self._header_chk.setChecked(False)
+        self._header_chk.blockSignals(False)
+
         for pm in pms:
             row = self._table.rowCount()
             self._table.insertRow(row)
@@ -230,18 +267,38 @@ class ProjectMemberPanel(QWidget):
                 pm.email or "",
                 reg,
             ]
+
+            # チェックボックス列
+            chk_item = QTableWidgetItem()
+            chk_item.setData(Qt.ItemDataRole.UserRole, pm.id)
+            chk_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            chk_item.setCheckState(Qt.CheckState.Unchecked)
+            self._table.setItem(row, COL_CHK, chk_item)
+
             for col, val in enumerate(vals):
                 item = QTableWidgetItem(val)
                 item.setData(Qt.ItemDataRole.UserRole, pm.id)
-                if _COL_FIELDS[col] is None:
+                data_col = col + 1  # COL_CHK の分シフト
+                if _COL_FIELDS[data_col] is None:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self._table.setItem(row, col, item)
+                self._table.setItem(row, data_col, item)
+
         self._table.setSortingEnabled(True)
         self._table.blockSignals(False)
         self._count_label.setText(f"{len(pms)} 件")
 
+    def _checked_pm_ids(self) -> list[int]:
+        ids = []
+        for row in range(self._table.rowCount()):
+            item = self._table.item(row, COL_CHK)
+            if item and item.checkState() == Qt.CheckState.Checked:
+                ids.append(item.data(Qt.ItemDataRole.UserRole))
+        return ids
+
     def _on_item_changed(self, item: QTableWidgetItem):
         col = item.column()
+        if col == COL_CHK:
+            return
         field = _COL_FIELDS[col] if col < len(_COL_FIELDS) else None
         if field is None:
             return
@@ -257,6 +314,13 @@ class ProjectMemberPanel(QWidget):
         finally:
             session.close()
 
+    def _current_pm_id(self) -> int | None:
+        row = self._table.currentRow()
+        if row < 0:
+            return None
+        item = self._table.item(row, COL_CHK)
+        return item.data(Qt.ItemDataRole.UserRole) if item else None
+
     def _add_entry(self):
         dlg = RosterEntryDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -268,10 +332,10 @@ class ProjectMemberPanel(QWidget):
             self._load()
 
     def _edit_entry(self):
-        row = self._table.currentRow()
-        if row < 0:
+        pm_id = self._current_pm_id()
+        if pm_id is None:
+            QMessageBox.information(self, "未選択", "編集する行を選択してください。")
             return
-        pm_id = self._table.item(row, 0).data(Qt.ItemDataRole.UserRole)
         session = get_session()
         try:
             pm = session.get(ProjectMember, pm_id)
@@ -319,20 +383,21 @@ class ProjectMemberPanel(QWidget):
         if dlg.exec():
             self._load()
 
-    def _remove(self):
-        row = self._table.currentRow()
-        if row < 0:
+    def _remove_checked(self):
+        ids = self._checked_pm_ids()
+        if not ids:
+            QMessageBox.information(self, "未選択",
+                                    "削除する行をチェックしてください。")
             return
-        pm_id = self._table.item(row, 0).data(Qt.ItemDataRole.UserRole)
-        name = self._table.item(row, 0).text()
         if QMessageBox.question(
                 self, "削除の確認",
-                f"「{name}」をこの名簿から削除します。\nよろしいですか？"
+                f"チェックした {len(ids)} 件を名簿から削除します。\nよろしいですか？"
         ) != QMessageBox.StandardButton.Yes:
             return
         session = get_session()
         try:
-            remove_member_from_project(session, pm_id)
+            for pm_id in ids:
+                remove_member_from_project(session, pm_id)
         finally:
             session.close()
         self._load()

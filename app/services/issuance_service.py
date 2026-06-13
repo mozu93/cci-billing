@@ -39,7 +39,7 @@ def _build_lines_from_project(session: Session, project_id: int,
     for pt in pts:
         tmpl = pt.item_template
         price = int(pt.unit_price_override or tmpl.unit_price)
-        qty = (quantities or {}).get(tmpl.id, default_quantity)
+        qty = (quantities or {}).get(tmpl.id, pt.default_quantity or default_quantity)
         if qty <= 0:
             continue  # 数量0の項目は明細に含めない
         line_total = price * qty
