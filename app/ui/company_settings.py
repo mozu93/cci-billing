@@ -391,6 +391,10 @@ class IssuerEditDialog(QDialog):
         self._company_id = company_id
         self.setWindowTitle("発行元を編集" if company_id else "発行元を追加")
         self.setFixedSize(440, 290)
+        self.setStyleSheet(
+            "QLineEdit { border: 1px solid #b5b5b5; border-radius: 3px; "
+            "padding: 1px 4px; background: white; }"
+        )
         self._build()
         if company_id:
             self._load(company_id)
@@ -399,15 +403,14 @@ class IssuerEditDialog(QDialog):
         layout = QVBoxLayout(self)
         form = QFormLayout()
         form.setSpacing(6)
-        _fh = 26
-        self._name    = QLineEdit(); self._name.setFixedHeight(_fh)
-        self._postal  = QLineEdit(); self._postal.setFixedHeight(_fh)
+        self._name    = QLineEdit()
+        self._postal  = QLineEdit()
         self._postal.setMaximumWidth(120)
-        self._address = QLineEdit(); self._address.setFixedHeight(_fh)
-        self._phone   = QLineEdit(); self._phone.setFixedHeight(_fh)
-        self._fax     = QLineEdit(); self._fax.setFixedHeight(_fh)
-        self._email   = QLineEdit(); self._email.setFixedHeight(_fh)
-        self._t_number = QLineEdit(); self._t_number.setFixedHeight(_fh)
+        self._address = QLineEdit()
+        self._phone   = QLineEdit()
+        self._fax     = QLineEdit()
+        self._email   = QLineEdit()
+        self._t_number = QLineEdit()
         self._t_number.setPlaceholderText("T1234567890123")
         self._print_seal = QCheckBox("印鑑を印字する（請求書・領収書共通）")
         self._print_seal.setChecked(True)
@@ -479,21 +482,24 @@ class BankAccountDialog(QDialog):
         super().__init__(parent)
         self._company_id = company_id
         self.setWindowTitle("銀行口座登録")
-        self.setFixedSize(360, 300)
+        self.setFixedSize(360, 260)
+        self.setStyleSheet(
+            "QLineEdit { border: 1px solid #b5b5b5; border-radius: 3px; "
+            "padding: 1px 4px; background: white; }"
+        )
         self._build()
 
     def _build(self):
         layout = QVBoxLayout(self)
         form = QFormLayout()
         form.setSpacing(6)
-        _fh = 26
-        self._label        = QLineEdit(); self._label.setFixedHeight(_fh)
+        self._label        = QLineEdit()
         self._label.setPlaceholderText("例：メイン口座")
-        self._bank_name    = QLineEdit(); self._bank_name.setFixedHeight(_fh)
-        self._branch       = QLineEdit(); self._branch.setFixedHeight(_fh)
-        self._account_type = QLineEdit("普通"); self._account_type.setFixedHeight(_fh)
-        self._account_number = QLineEdit(); self._account_number.setFixedHeight(_fh)
-        self._account_name   = QLineEdit(); self._account_name.setFixedHeight(_fh)
+        self._bank_name    = QLineEdit()
+        self._branch       = QLineEdit()
+        self._account_type = QLineEdit("普通")
+        self._account_number = QLineEdit()
+        self._account_name   = QLineEdit()
         form.addRow("ラベル",   self._label)
         form.addRow("銀行名",   self._bank_name)
         form.addRow("支店名",   self._branch)

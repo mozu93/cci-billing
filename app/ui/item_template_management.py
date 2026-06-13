@@ -130,7 +130,11 @@ class ItemTemplateDialog(QDialog):
         super().__init__(parent)
         self._template = template
         self.setWindowTitle("請求項目テンプレート編集" if template else "請求項目テンプレート登録")
-        self.setFixedSize(400, 280)
+        self.setFixedSize(400, 260)
+        self.setStyleSheet(
+            "QLineEdit, QSpinBox { border: 1px solid #b5b5b5; border-radius: 3px; "
+            "padding: 1px 4px; background: white; }"
+        )
         self._build()
         if template:
             self._populate(template)
@@ -161,13 +165,10 @@ class ItemTemplateDialog(QDialog):
             session.close()
 
         self._name = QLineEdit()
-        self._name.setFixedHeight(26)
         self._name.setPlaceholderText("例：青年部会費")
         self._unit_price = QSpinBox()
         self._unit_price.setRange(0, 9999999)
-        self._unit_price.setFixedHeight(26)
         self._unit = QLineEdit("式")
-        self._unit.setFixedHeight(26)
         self._tax_rate = QComboBox()
         for label, value in TAX_RATE_OPTIONS:
             self._tax_rate.addItem(label, value)
