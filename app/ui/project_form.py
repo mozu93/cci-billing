@@ -160,39 +160,79 @@ class ProjectFormDialog(QDialog):
 
     def _build(self):
         layout = QVBoxLayout(self)
-        form = QFormLayout()
+        layout.setSpacing(8)
 
-        self._category = QComboBox()
-        self._category.currentIndexChanged.connect(self._on_category_change)
+        # ── 2カラムフォーム ──────────────────────────────────
+        top_cols = QHBoxLayout()
+        top_cols.setSpacing(0)
+
+        # 左カラム：基本情報
+        left_w = QWidget()
+        left_form = QFormLayout(left_w)
+        left_form.setSpacing(6)
+        left_form.setContentsMargins(0, 0, 12, 0)
+
         self._fiscal_year = QSpinBox()
         self._fiscal_year.setRange(2000, 2099)
         self._fiscal_year.setValue(date.today().year)
-        self._notes = QTextEdit()
-        self._notes.setFixedHeight(56)
 
-        cat_row = QHBoxLayout()
-        cat_row.addWidget(self._category)
+        self._category = QComboBox()
+        self._category.currentIndexChanged.connect(self._on_category_change)
+        cat_row_w = QWidget()
+        cat_lay = QHBoxLayout(cat_row_w)
+        cat_lay.setContentsMargins(0, 0, 0, 0)
+        cat_lay.setSpacing(4)
+        cat_lay.addWidget(self._category, 1)
         btn_new_cat = QPushButton("＋ 新規業務名…")
         btn_new_cat.setFixedWidth(120)
         btn_new_cat.clicked.connect(self._add_category_master)
-        cat_row.addWidget(btn_new_cat)
-        form.addRow("年度", self._fiscal_year)
-        form.addRow("業務名", cat_row)
+        cat_lay.addWidget(btn_new_cat)
+
         self._title = QLineEdit()
         self._title.setPlaceholderText("件名（例：2026 視察研修会参加費）")
-        form.addRow("件名", self._title)
-        form.addRow("備考", self._notes)
 
-        # ── 発行元・口座・印鑑 ──────────────────────────────────
+        self._notes = QTextEdit()
+        self._notes.setFixedHeight(56)
+
+        left_form.addRow("年度",   self._fiscal_year)
+        left_form.addRow("業務名", cat_row_w)
+        left_form.addRow("件名",   self._title)
+        left_form.addRow("備考",   self._notes)
+
+        top_cols.addWidget(left_w, 6)
+
+        # 縦区切り線
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setStyleSheet("QFrame { color: #d0d0d0; }")
+        top_cols.addWidget(sep)
+
+        # 右カラム：発行設定
+        right_w = QWidget()
+        right_vbox = QVBoxLayout(right_w)
+        right_vbox.setContentsMargins(12, 0, 0, 0)
+        right_vbox.setSpacing(0)
+
+        right_form = QFormLayout()
+        right_form.setSpacing(6)
+        right_form.setContentsMargins(0, 0, 0, 0)
+
         self._issuer_combo = QComboBox()
         self._bank_combo   = QComboBox()
         self._seal_combo   = QComboBox()
         self._issuer_combo.currentIndexChanged.connect(self._on_issuer_changed)
-        form.addRow("発行元", self._issuer_combo)
-        form.addRow("銀行口座", self._bank_combo)
-        form.addRow("印鑑", self._seal_combo)
+
+        right_form.addRow("発行元",   self._issuer_combo)
+        right_form.addRow("銀行口座", self._bank_combo)
+        right_form.addRow("印鑑",     self._seal_combo)
+
+        right_vbox.addLayout(right_form)
+        right_vbox.addStretch()
+
+        top_cols.addWidget(right_w, 4)
+
         self._reload_issuers()
-        layout.addLayout(form)
+        layout.addLayout(top_cols)
 
         grp = QGroupBox("発行項目（1つ以上必須）")
         grp_vbox = QVBoxLayout(grp)
