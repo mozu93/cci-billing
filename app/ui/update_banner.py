@@ -13,11 +13,14 @@ class _VersionCheckThread(QThread):
     found = pyqtSignal(str, str)   # (tag_name, download_url)
 
     def run(self):
-        from app.utils.updater import check_latest_version, is_newer_version
-        from app.version import __version__
-        result = check_latest_version()
-        if result and is_newer_version(__version__, result["tag_name"]):
-            self.found.emit(result["tag_name"], result["download_url"])
+        try:
+            from app.utils.updater import check_latest_version, is_newer_version
+            from app.version import __version__
+            result = check_latest_version()
+            if result and is_newer_version(__version__, result["tag_name"]):
+                self.found.emit(result["tag_name"], result["download_url"])
+        except Exception:
+            return
 
 
 class _DownloadThread(QThread):
