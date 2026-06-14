@@ -1,11 +1,13 @@
 # app/ui/login_dialog.py
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QLineEdit, QPushButton, QMessageBox,
+    QLabel, QLineEdit, QPushButton, QMessageBox, QCheckBox,
 )
+from PyQt6.QtCore import QTimer
 from app.database.connection import get_session
 from app.services.staff_service import get_active_staff, get_staff, set_password, verify_password
 from app.utils import current_user
+from app.utils.app_config import get_config, save_config
 
 
 class _SetPasswordDialog(QDialog):
@@ -185,6 +187,24 @@ class LoginDialog(QDialog):
         self.setWindowTitle("ログイン")
         self.setFixedWidth(320)
         self._build()
+        # ダイアログ表示直後に自動ログインを試みる
+        QTimer.singleShot(0, self._try_auto_login)
+
+    def _try_auto_login(self):
+        """config に保存されたスタッフIDで自動ログイン"""
+        staff_id = get_config().get("auto_login_staff_id")
+        if not staff_id:
+            return
+        session = get_session()
+        try:
+            staff = get_staff(session, staff_id)
+            if staff:
+                current_user.set_current(staff.id, staff.name, bool(staff.is_admin))
+                self.accept()
+        except Exception:
+            pass
+        finally:
+            session.close()
 
     def _build(self):
         layout = QVBoxLayout(self)
@@ -204,6 +224,10 @@ class LoginDialog(QDialog):
         form.addRow("ID：", self._name_edit)
         form.addRow("パスワード：", self._pw_edit)
         layout.addLayout(form)
+
+        self._remember = QCheckBox("次回から自動ログイン")
+        self._remember.setChecked(bool(get_config().get("auto_login_staff_id")))
+        layout.addWidget(self._remember)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -246,6 +270,14 @@ class LoginDialog(QDialog):
                     return
         finally:
             session.close()
+
+        # 自動ログイン設定を保存 / 解除
+        cfg = get_config()
+        if self._remember.isChecked():
+            cfg["auto_login_staff_id"] = staff.id
+        else:
+            cfg.pop("auto_login_staff_id", None)
+        save_config(cfg)
 
         current_user.set_current(staff.id, staff.name, bool(staff.is_admin))
         self.accept()
