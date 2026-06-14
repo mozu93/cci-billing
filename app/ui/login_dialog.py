@@ -244,6 +244,7 @@ class LoginDialog(QDialog):
             return
 
         session = get_session()
+        staff_id = staff_name = staff_is_admin = None
         try:
             staff = next(
                 (s for s in get_active_staff(session) if s.name == name), None
@@ -268,16 +269,20 @@ class LoginDialog(QDialog):
                     self._pw_edit.clear()
                     self._pw_edit.setFocus()
                     return
+
+            staff_id = staff.id
+            staff_name = staff.name
+            staff_is_admin = bool(staff.is_admin)
         finally:
             session.close()
 
         # 自動ログイン設定を保存 / 解除
         cfg = get_config()
         if self._remember.isChecked():
-            cfg["auto_login_staff_id"] = staff.id
+            cfg["auto_login_staff_id"] = staff_id
         else:
             cfg.pop("auto_login_staff_id", None)
         save_config(cfg)
 
-        current_user.set_current(staff.id, staff.name, bool(staff.is_admin))
+        current_user.set_current(staff_id, staff_name, staff_is_admin)
         self.accept()
