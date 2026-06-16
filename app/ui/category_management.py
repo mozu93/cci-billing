@@ -132,6 +132,8 @@ class CategoryEditDialog(QDialog):
         layout = QVBoxLayout(self)
 
         form = QFormLayout()
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
         self._name = QLineEdit(name)
         self._order = QSpinBox()
         self._order.setRange(0, 999)

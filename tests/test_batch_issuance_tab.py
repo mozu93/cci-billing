@@ -13,7 +13,7 @@ def test_batch_issuance_subtabs(qtbot, memory_db):
     inner = w.findChild(QTabWidget)
     assert inner is not None
     assert _tab_titles(inner) == [
-        "請求・領収書データ", "請求書発行", "領収書発行", "入金管理"
+        "データ作成", "請求書発行", "領収書発行", "入金管理"
     ]
 
 

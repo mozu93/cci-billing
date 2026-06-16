@@ -33,6 +33,8 @@ class InvoiceOptionsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         form = QFormLayout()
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
         self._due = QDateEdit(QDate(default.year, default.month, default.day))
         self._due.setCalendarPopup(True)
         self._due.setDisplayFormat("yyyy/MM/dd")

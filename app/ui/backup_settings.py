@@ -24,6 +24,8 @@ class BackupSettingsWidget(QWidget):
         layout = QVBoxLayout(self)
         grp = QGroupBox("バックアップ設定")
         form = QFormLayout(grp)
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
         self._backup_dir = QLineEdit()
         self._backup_dir.setPlaceholderText("バックアップ保存先フォルダ")
         btn_browse = QPushButton("参照")

@@ -11,7 +11,7 @@ def test_counter_widget_has_category_quick_add(qtbot, memory_db):
     from app.ui.issuance_counter import IssuanceCounterWidget
     w = IssuanceCounterWidget()
     qtbot.addWidget(w)
-    assert "＋ 新規業務登録" in _button_texts(w)
+    assert "＋ 新規業務名登録" in _button_texts(w)
     assert hasattr(w, "_add_category_master")
 
 

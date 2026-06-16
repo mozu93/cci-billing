@@ -21,8 +21,7 @@ def test_invoice_widget_has_correct_buttons(qtbot, memory_db):
     w = IssuanceFromProjectWidget("invoice")
     qtbot.addWidget(w)
     texts = _texts(w)
-    assert "選択行に請求書を発行" in texts
-    assert "全員に請求書を発行" in texts
+    assert "選択した請求書を発行" in texts
     assert "準備（採番）" not in texts
 
 
@@ -31,8 +30,7 @@ def test_receipt_widget_has_correct_buttons(qtbot, memory_db):
     w = IssuanceFromProjectWidget("receipt")
     qtbot.addWidget(w)
     texts = _texts(w)
-    assert "選択行に領収書を発行" in texts
-    assert "全員に領収書を発行" in texts
+    assert "選択した領収書を発行" in texts
 
 
 def test_widget_has_no_doctype_combo(qtbot, memory_db):

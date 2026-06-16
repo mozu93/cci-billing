@@ -133,7 +133,7 @@ class ItemTemplateDialog(QDialog):
         self.setFixedSize(400, 260)
         self.setStyleSheet(
             "QLineEdit, QSpinBox { border: 1px solid #b5b5b5; border-radius: 3px; "
-            "padding: 1px 4px; background: white; }"
+            "padding: 3px 4px; background: white; }"
         )
         self._build()
         if template:
@@ -155,6 +155,8 @@ class ItemTemplateDialog(QDialog):
     def _build(self):
         layout = QVBoxLayout(self)
         form = QFormLayout()
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
 
         self._category = QComboBox()
         session = get_session()

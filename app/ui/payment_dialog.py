@@ -155,15 +155,20 @@ class PaymentManagementWidget(QWidget):
 
     def _load(self):
         project_id = self._proj_combo.currentData()
-        if project_id is None:
-            return
         status_text = self._status_combo.currentText()
         status = None if status_text == "すべて" else status_text
         invoice_only = self._doctype_combo.currentText() == "請求書のみ"
 
         session = get_session()
         try:
-            issuances = get_project_issuances(session, project_id, status)
+            if project_id is None:
+                from app.database.models import Issuance as _Iss
+                q = session.query(_Iss)
+                if status:
+                    q = q.filter(_Iss.status == status)
+                issuances = q.order_by(_Iss.created_at.desc()).all()
+            else:
+                issuances = get_project_issuances(session, project_id, status)
             from app.database.models import ProjectMember
             self._table.setSortingEnabled(False)
             self._table.setRowCount(0)
@@ -444,6 +449,8 @@ class _BatchPaymentDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(f"{count} 件をまとめて支払済みにします。"))
         form = QFormLayout()
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
         self._date = QDateEdit(QDate.currentDate())
         self._date.setCalendarPopup(True)
         self._method = QComboBox()
@@ -492,6 +499,8 @@ class PaymentDialog(QDialog):
     def _build(self):
         layout = QVBoxLayout(self)
         form = QFormLayout()
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
         self._date = QDateEdit(QDate.currentDate())
         self._date.setCalendarPopup(True)
         self._amount = QSpinBox()

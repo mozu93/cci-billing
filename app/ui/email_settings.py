@@ -20,6 +20,8 @@ class EmailSettingsWidget(QWidget):
         layout = QVBoxLayout(self)
         grp = QGroupBox("SMTP設定")
         form = QFormLayout(grp)
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
         self._host = QLineEdit()
         self._host.setPlaceholderText("例：smtp.gmail.com")
         self._port = QSpinBox()
@@ -45,6 +47,8 @@ class EmailSettingsWidget(QWidget):
 
         grp_t = QGroupBox("送信メールテンプレート")
         tform = QFormLayout(grp_t)
+        tform.setVerticalSpacing(3)
+        tform.setHorizontalSpacing(8)
         self._tmpl_type = QComboBox()
         self._tmpl_type.addItem("請求書", "invoice")
         self._tmpl_type.addItem("領収書", "receipt")

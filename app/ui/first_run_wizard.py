@@ -22,6 +22,8 @@ class FirstRunWizard(QDialog):
         self._db_type.currentIndexChanged.connect(self._on_type_change)
 
         form = QFormLayout()
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
         self._host = QLineEdit("localhost")
         self._port = QSpinBox()
         self._port.setRange(1, 65535)

@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QWidget, QLineEdit, QComboBox, QSpinBox, QTextEdit,
     QPushButton, QLabel, QMessageBox, QFrame,
-    QScrollArea, QGroupBox
+    QScrollArea, QGroupBox, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 from app.database.connection import get_session
@@ -152,6 +152,13 @@ class ProjectFormDialog(QDialog):
         self.setWindowTitle("請求・領収書データの登録" if project_id is None
                             else "請求・領収書データの編集")
         self.resize(860, 600)
+        self.setStyleSheet(
+            "QLineEdit, QComboBox, QSpinBox { "
+            "border: 1px solid #b5b5b5; border-radius: 3px; "
+            "padding: 3px 4px; background: white; }"
+            "QTextEdit { border: 1px solid #b5b5b5; border-radius: 3px; "
+            "background: white; }"
+        )
         self._build()
         if project_id:
             self._load(project_id)
@@ -160,7 +167,7 @@ class ProjectFormDialog(QDialog):
 
     def _build(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)
+        layout.setSpacing(4)
 
         # ── 2カラムフォーム ──────────────────────────────────
         top_cols = QHBoxLayout()
@@ -168,13 +175,19 @@ class ProjectFormDialog(QDialog):
 
         # 左カラム：基本情報
         left_w = QWidget()
-        left_form = QFormLayout(left_w)
-        left_form.setSpacing(6)
-        left_form.setContentsMargins(0, 0, 12, 0)
+        left_outer = QVBoxLayout(left_w)
+        left_outer.setContentsMargins(0, 0, 12, 0)
+        left_outer.setSpacing(0)
+
+        left_form = QFormLayout()
+        left_form.setVerticalSpacing(3)
+        left_form.setHorizontalSpacing(8)
+        left_form.setContentsMargins(0, 0, 0, 0)
 
         self._fiscal_year = QSpinBox()
         self._fiscal_year.setRange(2000, 2099)
         self._fiscal_year.setValue(date.today().year)
+        self._fiscal_year.setMaximumWidth(80)
 
         self._category = QComboBox()
         self._category.currentIndexChanged.connect(self._on_category_change)
@@ -192,12 +205,16 @@ class ProjectFormDialog(QDialog):
         self._title.setPlaceholderText("件名（例：2026 視察研修会参加費）")
 
         self._notes = QTextEdit()
-        self._notes.setFixedHeight(56)
+        self._notes.setFixedHeight(44)
 
         left_form.addRow("年度",   self._fiscal_year)
         left_form.addRow("業務名", cat_row_w)
         left_form.addRow("件名",   self._title)
         left_form.addRow("備考",   self._notes)
+
+        left_outer.addLayout(left_form)
+        left_outer.addStretch()
+        left_w.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
 
         top_cols.addWidget(left_w, 6)
 
@@ -214,7 +231,8 @@ class ProjectFormDialog(QDialog):
         right_vbox.setSpacing(0)
 
         right_form = QFormLayout()
-        right_form.setSpacing(6)
+        right_form.setVerticalSpacing(3)
+        right_form.setHorizontalSpacing(8)
         right_form.setContentsMargins(0, 0, 0, 0)
 
         self._issuer_combo = QComboBox()
@@ -228,6 +246,7 @@ class ProjectFormDialog(QDialog):
 
         right_vbox.addLayout(right_form)
         right_vbox.addStretch()
+        right_w.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
 
         top_cols.addWidget(right_w, 4)
 
@@ -242,7 +261,7 @@ class ProjectFormDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setMinimumHeight(150)
+        scroll.setMinimumHeight(190)
         self._rows_container = QWidget()
         self._rows_container.setStyleSheet("background: white;")
         self._rows_vbox = QVBoxLayout(self._rows_container)
@@ -261,7 +280,7 @@ class ProjectFormDialog(QDialog):
         add_row.addWidget(btn_new_tmpl)
         add_row.addStretch()
         grp_vbox.addLayout(add_row)
-        layout.addWidget(grp)
+        layout.addWidget(grp, 1)
 
         preview_row = QHBoxLayout()
         preview_row.addWidget(QLabel("プレビュー種別："))

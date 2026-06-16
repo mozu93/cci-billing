@@ -84,6 +84,8 @@ class RosterEntryDialog(QDialog):
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
         self._fields: dict[str, QLineEdit] = {}
         for key, label in self.FIELDS:
             le = QLineEdit()

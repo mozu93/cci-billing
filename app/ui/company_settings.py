@@ -25,12 +25,13 @@ class CompanySettingsWidget(QWidget):
 
     def _build(self):
         root = QVBoxLayout(self)
-        root.setSpacing(10)
+        root.setSpacing(6)
 
         # ── 発行元一覧 ─────────────────────────────────────────
         grp1 = QGroupBox("発行元一覧")
         grp1_layout = QVBoxLayout(grp1)
-        grp1_layout.setSpacing(6)
+        grp1_layout.setSpacing(4)
+        grp1_layout.setContentsMargins(6, 4, 6, 6)
 
         self._issuer_table = QTableWidget(0, 3)
         self._issuer_table.setHorizontalHeaderLabels(["名称", "住所", ""])
@@ -41,7 +42,7 @@ class CompanySettingsWidget(QWidget):
         self._issuer_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.ResizeToContents)
         self._issuer_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._issuer_table.setMaximumHeight(160)
+        self._issuer_table.setFixedHeight(155)
         self._issuer_table.currentCellChanged.connect(
             lambda cur_row, _cc, prev_row, _pc: (
                 self._on_issuer_selected(cur_row) if cur_row != prev_row else None))
@@ -66,12 +67,13 @@ class CompanySettingsWidget(QWidget):
 
         # ── 銀行口座 + 印鑑画像（選択中発行元） ────────────────
         bottom = QHBoxLayout()
-        bottom.setSpacing(12)
+        bottom.setSpacing(8)
 
         # 銀行口座
         grp2 = QGroupBox("銀行口座")
         bank_layout = QVBoxLayout(grp2)
-        bank_layout.setSpacing(6)
+        bank_layout.setSpacing(4)
+        bank_layout.setContentsMargins(6, 4, 6, 6)
         self._bank_table = QTableWidget(0, 5)
         self._bank_table.setHorizontalHeaderLabels(
             ["ラベル", "銀行名", "支店名", "種別", "口座番号"])
@@ -80,7 +82,7 @@ class CompanySettingsWidget(QWidget):
         self._bank_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents)
         self._bank_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._bank_table.setMaximumHeight(150)
+        self._bank_table.setFixedHeight(155)
         bank_layout.addWidget(self._bank_table)
 
         bank_btn_row = QHBoxLayout()
@@ -97,7 +99,8 @@ class CompanySettingsWidget(QWidget):
         # 印鑑画像
         grp3 = QGroupBox("印鑑画像")
         seal_layout = QVBoxLayout(grp3)
-        seal_layout.setSpacing(6)
+        seal_layout.setSpacing(4)
+        seal_layout.setContentsMargins(6, 4, 6, 6)
         self._print_seal_chk = QCheckBox("印鑑を印字する（請求書・領収書共通）")
         self._print_seal_chk.setChecked(True)
         self._print_seal_chk.stateChanged.connect(self._save_seal_option)
@@ -113,7 +116,7 @@ class CompanySettingsWidget(QWidget):
         self._seal_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.ResizeToContents)
         self._seal_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._seal_table.setMaximumHeight(150)
+        self._seal_table.setFixedHeight(155)
         seal_layout.addWidget(self._seal_table)
 
         seal_btn_row = QHBoxLayout()
@@ -131,6 +134,7 @@ class CompanySettingsWidget(QWidget):
         bottom.addWidget(grp3)
 
         root.addLayout(bottom)
+        root.addStretch()
 
     # ── 発行元一覧の読み込み ────────────────────────────────────
 
@@ -393,7 +397,7 @@ class IssuerEditDialog(QDialog):
         self.setFixedSize(440, 290)
         self.setStyleSheet(
             "QLineEdit { border: 1px solid #b5b5b5; border-radius: 3px; "
-            "padding: 1px 4px; background: white; }"
+            "padding: 3px 4px; background: white; }"
         )
         self._build()
         if company_id:
@@ -402,7 +406,8 @@ class IssuerEditDialog(QDialog):
     def _build(self):
         layout = QVBoxLayout(self)
         form = QFormLayout()
-        form.setSpacing(6)
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
         self._name    = QLineEdit()
         self._postal  = QLineEdit()
         self._postal.setMaximumWidth(120)
@@ -485,14 +490,15 @@ class BankAccountDialog(QDialog):
         self.setFixedSize(360, 260)
         self.setStyleSheet(
             "QLineEdit { border: 1px solid #b5b5b5; border-radius: 3px; "
-            "padding: 1px 4px; background: white; }"
+            "padding: 3px 4px; background: white; }"
         )
         self._build()
 
     def _build(self):
         layout = QVBoxLayout(self)
         form = QFormLayout()
-        form.setSpacing(6)
+        form.setVerticalSpacing(3)
+        form.setHorizontalSpacing(8)
         self._label        = QLineEdit()
         self._label.setPlaceholderText("例：メイン口座")
         self._bank_name    = QLineEdit()

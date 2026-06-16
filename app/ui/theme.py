@@ -8,7 +8,7 @@ _DOWN = _os.path.join(_ICONS, "spin_down.svg").replace("\\", "/")
 STYLESHEET = f"""
 QGroupBox {{
     border: 1px solid #E2E8F0; border-radius: 8px;
-    margin-top: 12px; padding: 14px 10px 10px 10px;
+    margin-top: 10px; padding: 6px 6px 6px 6px;
     background: white; font-family: "Meiryo UI";
 }}
 QGroupBox::title {{
@@ -17,8 +17,8 @@ QGroupBox::title {{
 }}
 QLineEdit, QComboBox, QDateEdit, QTextEdit, QSpinBox {{
     border: 1px solid #CBD5E1; border-radius: 5px;
-    padding: 5px 10px; background: white; color: #1E293B;
-    font-family: "Meiryo UI"; font-size: 12px; min-height: 28px;
+    padding: 3px 4px; background: white; color: #1E293B;
+    font-family: "Meiryo UI"; font-size: 12px;
 }}
 QSpinBox::up-button {{
     subcontrol-origin: border; subcontrol-position: top right;
