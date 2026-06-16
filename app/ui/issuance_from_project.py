@@ -88,7 +88,8 @@ class IssuanceFromProjectWidget(QWidget):
         self._templates: list[dict] = []  # [{id, name}, ...]
         self._sort_col: int = COL_ORG
         self._sort_asc: bool = True
-        self._qty_cache: dict[int, dict[int, int]] = {}  # {pm_id: {tmpl_id: qty}}
+        self._qty_cache: dict[int, dict[int, int]] = {}    # {pm_id: {tmpl_id: qty}}
+        self._price_cache: dict[int, dict[int, int]] = {}  # {pm_id: {tmpl_id: unit_price}}
         self._all_projects: list = []
         self._build()
         self._load_projects()
@@ -99,11 +100,11 @@ class IssuanceFromProjectWidget(QWidget):
 
     @property
     def _col_inv(self) -> int:
-        return 6 if self._is_all_mode else 5 + len(self._templates)
+        return 6 if self._is_all_mode else 5 + len(self._templates) * 2
 
     @property
     def _col_rcp(self) -> int:
-        return 7 if self._is_all_mode else 6 + len(self._templates)
+        return 7 if self._is_all_mode else 6 + len(self._templates) * 2
 
     def _build(self):
         layout = QVBoxLayout(self)
@@ -221,9 +222,10 @@ class IssuanceFromProjectWidget(QWidget):
             hdr.setSectionResizeMode(7, rtc)
         else:
             n = len(self._templates)
-            self._table.setColumnCount(7 + n)
+            self._table.setColumnCount(7 + n * 2)
             headers = ["", "会員番号", "事業所名", "フリガナ", "代表者名"]
             for tmpl in self._templates:
+                headers.append(f"{tmpl['name']}\n単価")
                 headers.append(f"{tmpl['name']}\n数量")
             headers += ["請求書", "領収書"]
             self._table.setHorizontalHeaderLabels(headers)
@@ -232,9 +234,11 @@ class IssuanceFromProjectWidget(QWidget):
             hdr.setSectionResizeMode(COL_ORG,  interactive); self._table.setColumnWidth(COL_ORG, 180)
             hdr.setSectionResizeMode(COL_KANA, interactive); self._table.setColumnWidth(COL_KANA,140)
             hdr.setSectionResizeMode(COL_REP,  interactive); self._table.setColumnWidth(COL_REP, 100)
-            for col in range(5, 5 + n):
-                hdr.setSectionResizeMode(col, interactive)
-                self._table.setColumnWidth(col, 120)
+            for i in range(n):
+                hdr.setSectionResizeMode(5 + i * 2, interactive)
+                self._table.setColumnWidth(5 + i * 2, 80)
+                hdr.setSectionResizeMode(5 + i * 2 + 1, interactive)
+                self._table.setColumnWidth(5 + i * 2 + 1, 100)
             for col in (self._col_inv, self._col_rcp):
                 hdr.setSectionResizeMode(col, rtc)
 
@@ -248,9 +252,9 @@ class IssuanceFromProjectWidget(QWidget):
     def _on_header_clicked(self, col: int):
         if col == COL_CHK:
             return  # QCheckBox ウィジェットが処理
-        # 数量 SpinBox 列はソート対象外
-        qty_cols = set(range(5, 5 + len(self._templates)))
-        if col in qty_cols:
+        # 数量・単価 SpinBox 列はソート対象外
+        spin_cols = set(range(5, 5 + len(self._templates) * 2))
+        if col in spin_cols:
             return
         self._save_qty_cache()
         if self._sort_col == col:
@@ -378,7 +382,11 @@ class IssuanceFromProjectWidget(QWidget):
             try:
                 pts = get_project_templates(session, project_id)
                 self._templates = [
-                    {"id": pt.item_template.id, "name": pt.item_template.name}
+                    {
+                        "id": pt.item_template.id,
+                        "name": pt.item_template.name,
+                        "unit_price": int(pt.unit_price_override or pt.item_template.unit_price or 0),
+                    }
                     for pt in pts
                 ]
             finally:
@@ -504,15 +512,22 @@ class IssuanceFromProjectWidget(QWidget):
                 self._table.setItem(row, col, it)
 
             for col_offset, tmpl in enumerate(self._templates):
-                col = 5 + col_offset
-                spin = _QtySpinBox(self._table, row, col)
+                price_col = 5 + col_offset * 2
+                qty_col   = 5 + col_offset * 2 + 1
+                price_spin = _QtySpinBox(self._table, row, price_col)
+                price_spin.setRange(0, 9999999)
+                cached_price = self._price_cache.get(pm_id, {}).get(tmpl["id"], tmpl["unit_price"])
+                price_spin.setValue(cached_price)
+                price_spin.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                price_spin.setStyleSheet("QSpinBox { min-height: 0; padding: 1px 4px; }")
+                self._table.setCellWidget(row, price_col, price_spin)
+                spin = _QtySpinBox(self._table, row, qty_col)
                 spin.setRange(0, 9999)
-                cached = self._qty_cache.get(pm_id, {}).get(tmpl["id"], 1)
-                spin.setValue(cached)
+                cached_qty = self._qty_cache.get(pm_id, {}).get(tmpl["id"], 1)
+                spin.setValue(cached_qty)
                 spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                spin.setStyleSheet(
-                    "QSpinBox { min-height: 0; padding: 1px 4px; }")
-                self._table.setCellWidget(row, col, spin)
+                spin.setStyleSheet("QSpinBox { min-height: 0; padding: 1px 4px; }")
+                self._table.setCellWidget(row, qty_col, spin)
 
         self._table.horizontalHeader().setSortIndicator(
             self._sort_col,
@@ -525,7 +540,15 @@ class IssuanceFromProjectWidget(QWidget):
     def _get_row_quantities(self, row: int) -> dict[int, int]:
         result = {}
         for col_offset, tmpl in enumerate(self._templates):
-            spin = self._table.cellWidget(row, 5 + col_offset)
+            spin = self._table.cellWidget(row, 5 + col_offset * 2 + 1)
+            if isinstance(spin, _QtySpinBox):
+                result[tmpl["id"]] = spin.value()
+        return result
+
+    def _get_row_prices(self, row: int) -> dict[int, int]:
+        result = {}
+        for col_offset, tmpl in enumerate(self._templates):
+            spin = self._table.cellWidget(row, 5 + col_offset * 2)
             if isinstance(spin, _QtySpinBox):
                 result[tmpl["id"]] = spin.value()
         return result
@@ -537,6 +560,7 @@ class IssuanceFromProjectWidget(QWidget):
                 continue
             pm_id, _, _ = data_item.data(Qt.ItemDataRole.UserRole)
             self._qty_cache[pm_id] = self._get_row_quantities(r)
+            self._price_cache[pm_id] = self._get_row_prices(r)
 
     # ── Excel入出力 ───────────────────────────────────────────────
 
@@ -704,7 +728,7 @@ class IssuanceFromProjectWidget(QWidget):
                 continue
             q = file_qty.pop(pm_id)
             for col_offset, tmpl in enumerate(self._templates):
-                spin = self._table.cellWidget(r, 5 + col_offset)
+                spin = self._table.cellWidget(r, 5 + col_offset * 2 + 1)
                 if isinstance(spin, _QtySpinBox) and tmpl["id"] in q:
                     spin.setValue(q[tmpl["id"]])
             total = sum(q.values())
@@ -762,13 +786,14 @@ class IssuanceFromProjectWidget(QWidget):
             if doc_type == "invoice" and invoice_id is None and receipt_id is not None:
                 continue  # 無効化済み
             quantities = self._get_row_quantities(row_idx)
+            unit_prices = self._get_row_prices(row_idx)
             issuance_id = invoice_id if doc_type == "invoice" else receipt_id
             if issuance_id is None and quantities and not any(quantities.values()):
                 org_item = self._table.item(row_idx, COL_ORG)
                 name = org_item.text() if org_item else f"{row_idx + 1}行目"
                 errors.append(f"{name}：数量がすべて0のためスキップしました")
                 continue
-            targets.append((pm_id, issuance_id, quantities))
+            targets.append((pm_id, issuance_id, quantities, unit_prices))
         if not targets:
             return errors
 
@@ -798,7 +823,7 @@ class IssuanceFromProjectWidget(QWidget):
         try:
             from app.database.models import ProjectMember, Issuance
             from app.utils.pdf_helpers import generate_and_open, merge_and_open
-            for pm_id, issuance_id, quantities in targets:
+            for pm_id, issuance_id, quantities, unit_prices in targets:
                 try:
                     pm = session.get(ProjectMember, pm_id)
                     if issuance_id is None:
@@ -811,6 +836,7 @@ class IssuanceFromProjectWidget(QWidget):
                             doc_type=doc_type,
                             fiscal_year=today.year, month=today.month,
                             quantities=quantities if quantities else None,
+                            unit_prices=unit_prices if unit_prices else None,
                         )
                         issuance_id = iss.id
 

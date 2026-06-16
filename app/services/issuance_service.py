@@ -24,11 +24,14 @@ def get_next_doc_number(session: Session, doc_type: str,
 
 def _build_lines_from_project(session: Session, project_id: int,
                                quantities: dict[int, int] | None = None,
+                               unit_prices: dict[int, int] | None = None,
                                default_quantity: int = 1) -> tuple[list[dict], int]:
     """プロジェクトテンプレートから発行明細を生成する。
 
-    quantities: {item_template_id: 数量} — 品目ごとに数量を指定する場合。
-                None または未指定のキーは default_quantity を使う。
+    quantities:  {item_template_id: 数量} — 品目ごとに数量を指定する場合。
+                 None または未指定のキーは default_quantity を使う。
+    unit_prices: {item_template_id: 単価} — 品目ごとに単価を上書きする場合。
+                 None または未指定のキーはプロジェクト設定 or マスタ単価を使う。
     """
     pts = (session.query(ProjectTemplate)
            .filter_by(project_id=project_id)
@@ -38,7 +41,7 @@ def _build_lines_from_project(session: Session, project_id: int,
     total = 0
     for pt in pts:
         tmpl = pt.item_template
-        price = int(pt.unit_price_override or tmpl.unit_price)
+        price = (unit_prices or {}).get(tmpl.id) or int(pt.unit_price_override or tmpl.unit_price)
         qty = (quantities or {}).get(tmpl.id, pt.default_quantity or default_quantity)
         if qty <= 0:
             continue  # 数量0の項目は明細に含めない
@@ -62,9 +65,11 @@ def create_issuance_for_member(session: Session, project_id: int,
                                 recipient_name: str,
                                 doc_type: str, fiscal_year: int,
                                 month: int,
-                                quantities: dict[int, int] | None = None) -> Issuance:
+                                quantities: dict[int, int] | None = None,
+                                unit_prices: dict[int, int] | None = None) -> Issuance:
     doc_number = get_next_doc_number(session, doc_type, fiscal_year, month)
-    lines, total = _build_lines_from_project(session, project_id, quantities=quantities)
+    lines, total = _build_lines_from_project(
+        session, project_id, quantities=quantities, unit_prices=unit_prices)
 
     issuance = Issuance(
         project_id=project_id,
