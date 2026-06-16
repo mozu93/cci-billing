@@ -25,13 +25,15 @@ def get_next_doc_number(session: Session, doc_type: str,
 def _build_lines_from_project(session: Session, project_id: int,
                                quantities: dict[int, int] | None = None,
                                unit_prices: dict[int, int] | None = None,
-                               default_quantity: int = 1) -> tuple[list[dict], int]:
+                               default_quantity: int | None = None) -> tuple[list[dict], int]:
     """プロジェクトテンプレートから発行明細を生成する。
 
     quantities:  {item_template_id: 数量} — 品目ごとに数量を指定する場合。
-                 None または未指定のキーは default_quantity を使う。
+                 未指定のキーは default_quantity（指定なければ品目の既定数量）を使う。
     unit_prices: {item_template_id: 単価} — 品目ごとに単価を上書きする場合。
                  None または未指定のキーはプロジェクト設定 or マスタ単価を使う。
+    default_quantity: 明示的に指定された場合、品目側の既定数量より優先する
+                 （窓口発行で「数量3で発行」のように一括上書きする場合に使う）。
     """
     pts = (session.query(ProjectTemplate)
            .filter_by(project_id=project_id)
@@ -42,7 +44,8 @@ def _build_lines_from_project(session: Session, project_id: int,
     for pt in pts:
         tmpl = pt.item_template
         price = (unit_prices or {}).get(tmpl.id) or int(pt.unit_price_override or tmpl.unit_price)
-        qty = (quantities or {}).get(tmpl.id, pt.default_quantity or default_quantity)
+        fallback_qty = default_quantity if default_quantity is not None else (pt.default_quantity or 1)
+        qty = (quantities or {}).get(tmpl.id, fallback_qty)
         if qty <= 0:
             continue  # 数量0の項目は明細に含めない
         line_total = price * qty
@@ -216,7 +219,11 @@ def create_direct_issuance(session: Session, lines_data: list[dict],
                             recipient_kana: str = "",
                             recipient_department: str = "",
                             recipient_name_kana: str = "",
-                            recipient_phone: str = "") -> Issuance:
+                            recipient_phone: str = "",
+                            company_settings_id: int | None = None,
+                            bank_account_id: int | None = None,
+                            seal_image_id: int | None = None,
+                            show_recipient_person: bool = True) -> Issuance:
     from app.database.models import Project
     sys_proj = (session.query(Project)
                 .filter_by(name=project_name, project_type="counter")
@@ -253,6 +260,10 @@ def create_direct_issuance(session: Session, lines_data: list[dict],
         staff_id=staff_id,
         staff_name=staff_name,
         delivery_method=delivery_method,
+        company_settings_id=company_settings_id,
+        bank_account_id=bank_account_id,
+        seal_image_id=seal_image_id,
+        show_recipient_person=show_recipient_person,
     )
     session.add(issuance)
     session.flush()
@@ -291,7 +302,11 @@ def update_direct_issuance(session: Session, issuance_id: int,
                             recipient_kana: str = "",
                             recipient_department: str = "",
                             recipient_name_kana: str = "",
-                            recipient_phone: str = "") -> Issuance:
+                            recipient_phone: str = "",
+                            company_settings_id: int | None = None,
+                            bank_account_id: int | None = None,
+                            seal_image_id: int | None = None,
+                            show_recipient_person: bool = True) -> Issuance:
     issuance = session.get(Issuance, issuance_id)
     if issuance is None:
         raise ValueError("発行データが見つかりません。")
@@ -307,6 +322,10 @@ def update_direct_issuance(session: Session, issuance_id: int,
     issuance.recipient_name_kana = recipient_name_kana
     issuance.recipient_phone = recipient_phone
     issuance.delivery_method = delivery_method
+    issuance.company_settings_id = company_settings_id
+    issuance.bank_account_id = bank_account_id
+    issuance.seal_image_id = seal_image_id
+    issuance.show_recipient_person = show_recipient_person
     issuance.amount = total
     if staff_id is not None:
         issuance.staff_id = staff_id

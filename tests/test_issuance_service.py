@@ -273,3 +273,60 @@ def test_search_unpaid_invoices(db_session):
     record_payment(db_session, inv.id, payment_date=date(2026, 5, 30),
                    amount=int(inv.amount), payment_method="現金", staff_name="田中")
     assert search_unpaid_invoices(db_session, "○○商事") == []
+
+
+def test_create_direct_issuance_stores_issuer_and_display_settings(db_session):
+    """単発発行で選んだ発行元・銀行口座・印鑑・宛名表示設定が Issuance に保存される。"""
+    from app.services.issuance_service import create_direct_issuance
+    from app.database.models import CompanySettings, BankAccount, SealImage
+
+    cs = CompanySettings(name="テスト発行元")
+    db_session.add(cs)
+    db_session.commit()
+    bank = BankAccount(company_id=cs.id, label="口座", bank_name="○○銀行")
+    seal = SealImage(company_id=cs.id, label="印鑑", path="/tmp/seal.png")
+    db_session.add_all([bank, seal])
+    db_session.commit()
+
+    lines = [{"item_template_id": None, "item_name": "会費",
+              "quantity": 1, "unit": "式", "unit_price": 5000, "tax_rate": 0}]
+    iss = create_direct_issuance(
+        db_session, lines_data=lines,
+        recipient_organization="○○商事", recipient_name="",
+        doc_type="invoice", fiscal_year=2026, month=6,
+        company_settings_id=cs.id, bank_account_id=bank.id,
+        seal_image_id=seal.id, show_recipient_person=False,
+    )
+    assert iss.company_settings_id == cs.id
+    assert iss.bank_account_id == bank.id
+    assert iss.seal_image_id == seal.id
+    assert iss.show_recipient_person is False
+
+
+def test_update_direct_issuance_updates_issuer_and_display_settings(db_session):
+    """内容修正で発行元・宛名表示設定を変更できる。"""
+    from app.services.issuance_service import create_direct_issuance, update_direct_issuance
+    from app.database.models import CompanySettings
+
+    cs1 = CompanySettings(name="発行元A")
+    cs2 = CompanySettings(name="発行元B")
+    db_session.add_all([cs1, cs2])
+    db_session.commit()
+
+    lines = [{"item_template_id": None, "item_name": "会費",
+              "quantity": 1, "unit": "式", "unit_price": 5000, "tax_rate": 0}]
+    iss = create_direct_issuance(
+        db_session, lines_data=lines,
+        recipient_organization="○○商事", recipient_name="",
+        doc_type="invoice", fiscal_year=2026, month=6,
+        company_settings_id=cs1.id, show_recipient_person=True,
+    )
+
+    updated = update_direct_issuance(
+        db_session, issuance_id=iss.id, lines_data=lines,
+        recipient_organization="○○商事", recipient_name="",
+        delivery_method="窓口手渡し",
+        company_settings_id=cs2.id, show_recipient_person=False,
+    )
+    assert updated.company_settings_id == cs2.id
+    assert updated.show_recipient_person is False
