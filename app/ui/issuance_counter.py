@@ -239,15 +239,16 @@ class IssuanceCounterWidget(QWidget):
         company_id = self._issuer_combo.currentData()
         session = get_session()
         try:
-            self._bank_combo.blockSignals(True)
-            self._bank_combo.clear()
-            self._bank_combo.addItem("（なし）", None)
-            if company_id:
-                banks = session.query(BankAccount).filter_by(company_id=company_id).all()
-                for b in banks:
-                    label = f"{'★ ' if b.is_default else ''}{b.label} {b.bank_name}"
-                    self._bank_combo.addItem(label, b.id)
-            self._bank_combo.blockSignals(False)
+            if hasattr(self, "_bank_combo"):
+                self._bank_combo.blockSignals(True)
+                self._bank_combo.clear()
+                self._bank_combo.addItem("（なし）", None)
+                if company_id:
+                    banks = session.query(BankAccount).filter_by(company_id=company_id).all()
+                    for b in banks:
+                        label = f"{'★ ' if b.is_default else ''}{b.label} {b.bank_name}"
+                        self._bank_combo.addItem(label, b.id)
+                self._bank_combo.blockSignals(False)
 
             self._seal_combo.blockSignals(True)
             self._seal_combo.clear()
@@ -259,18 +260,19 @@ class IssuanceCounterWidget(QWidget):
                     self._seal_combo.addItem(label, s.id)
             self._seal_combo.blockSignals(False)
 
-            if select_bank_id is not None:
-                for i in range(self._bank_combo.count()):
-                    if self._bank_combo.itemData(i) == select_bank_id:
-                        self._bank_combo.setCurrentIndex(i)
-                        break
-            else:
-                for i in range(self._bank_combo.count()):
-                    if self._bank_combo.itemData(i) is not None:
-                        b = session.get(BankAccount, self._bank_combo.itemData(i))
-                        if b and b.is_default:
+            if hasattr(self, "_bank_combo"):
+                if select_bank_id is not None:
+                    for i in range(self._bank_combo.count()):
+                        if self._bank_combo.itemData(i) == select_bank_id:
                             self._bank_combo.setCurrentIndex(i)
                             break
+                else:
+                    for i in range(self._bank_combo.count()):
+                        if self._bank_combo.itemData(i) is not None:
+                            b = session.get(BankAccount, self._bank_combo.itemData(i))
+                            if b and b.is_default:
+                                self._bank_combo.setCurrentIndex(i)
+                                break
 
             if select_seal_id is not None:
                 for i in range(self._seal_combo.count()):
@@ -326,6 +328,12 @@ class IssuanceCounterWidget(QWidget):
                     )
                 self._show_person_chk.setChecked(
                     iss.show_recipient_person if iss.show_recipient_person is not None else True)
+            elif self._doc_type_str == "receipt":
+                if iss.company_settings_id is not None:
+                    self._reload_issuer_combo(
+                        select_company_id=iss.company_settings_id,
+                        select_seal_id=iss.seal_image_id,
+                    )
             for line in iss.lines:
                 self._add_row()
                 self._populate_row_from_line(self._rows[-1], line)
@@ -589,6 +597,12 @@ class IssuanceCounterWidget(QWidget):
             self._postal_code_edit.textChanged.connect(
                 lambda: self._postal_timer.start(600))
         else:
+            self._issuer_combo = QComboBox()
+            self._seal_combo   = QComboBox()
+            self._issuer_combo.currentIndexChanged.connect(self._on_issuer_combo_changed)
+            opts_form.addRow("発行元", self._issuer_combo)
+            opts_form.addRow("印鑑",   self._seal_combo)
+            self._reload_issuer_combo()
             fmt_note = QLabel("印刷形式：A5縦（固定）")
             fmt_note.setStyleSheet("color: #666; font-size: 11px;")
             opts_form.addRow("", fmt_note)
@@ -1036,6 +1050,9 @@ class IssuanceCounterWidget(QWidget):
             _cfg = _get_cfg()
             _cfg["recipient_person_last"] = show_recipient_person
             _save_cfg(_cfg)
+        elif self._doc_type_str == "receipt":
+            issuer_company_id = self._issuer_combo.currentData()
+            seal_image_id     = self._seal_combo.currentData()
 
         doc_type = self._doc_type_str
         session  = get_session()
