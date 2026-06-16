@@ -8,3 +8,4 @@ dist/
 build/
 installer_output/
 *.spec.bak
+*.csv
