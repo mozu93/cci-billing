@@ -26,6 +26,12 @@ def _migrate(engine):
                 "ALTER TABLE company_settings ADD COLUMN print_seal BOOLEAN DEFAULT 1"))
             conn.commit()
 
+        mem_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(members)"))}
+        if "department" not in mem_cols:
+            conn.execute(text(
+                "ALTER TABLE members ADD COLUMN department VARCHAR(100) DEFAULT ''"))
+            conn.commit()
+
         pm_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(project_members)"))}
         if "department" not in pm_cols:
             conn.execute(text(
