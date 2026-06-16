@@ -413,7 +413,13 @@ class IssuanceCounterWidget(QWidget):
     def _build(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(8)
+        layout.setSpacing(4)
+
+        # スクロール可能なコンテンツ領域（発行ボタンは外に固定）
+        _content = QWidget()
+        _cl = QVBoxLayout(_content)
+        _cl.setContentsMargins(0, 0, 0, 0)
+        _cl.setSpacing(8)
 
         # ── 上部2カラム ──────────────────────────────────
         top_row = QHBoxLayout()
@@ -588,7 +594,7 @@ class IssuanceCounterWidget(QWidget):
             opts_form.addRow("", fmt_note)
         top_row.addWidget(grp_opts, 3)
 
-        layout.addLayout(top_row)
+        _cl.addLayout(top_row)
 
         # ── 発行項目 ─────────────────────────────────────
         grp_lines = QGroupBox("発行項目")
@@ -627,14 +633,23 @@ class IssuanceCounterWidget(QWidget):
         btn_new_tmpl.clicked.connect(self._add_template_master)
         add_btn_row.addWidget(btn_new_tmpl)
         lines_layout.addLayout(add_btn_row)
-        layout.addWidget(grp_lines)
+        _cl.addWidget(grp_lines)
 
-        # ── 合計 + 発行ボタン ────────────────────────────
+        # ── 合計 ─────────────────────────────────────────
         self._total_label = QLabel("合計：¥0")
         self._total_label.setStyleSheet(
             "font-size: 18px; font-weight: bold; color: #1D4ED8; padding: 6px 2px;")
-        layout.addWidget(self._total_label)
+        _cl.addWidget(self._total_label)
 
+        # スクロール可能領域をメインレイアウトに追加
+        _outer_scroll = QScrollArea()
+        _outer_scroll.setWidgetResizable(True)
+        _outer_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        _outer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        _outer_scroll.setWidget(_content)
+        layout.addWidget(_outer_scroll, 1)
+
+        # ── 発行ボタン（常に画面下部に固定）──────────────
         _btn_lbl = "修正して再発行" if self._edit_issuance_id else "発行する"
         self._btn_issue = QPushButton(_btn_lbl)
         self._btn_issue.setFixedHeight(44)
@@ -643,7 +658,6 @@ class IssuanceCounterWidget(QWidget):
             "background: #1D4ED8; color: white; border-radius: 6px;")
         self._btn_issue.clicked.connect(self._issue)
         layout.addWidget(self._btn_issue)
-        layout.addStretch()
 
         if not self._edit_issuance_id:
             self._add_row()
