@@ -191,3 +191,51 @@ def test_merge_and_open_accepts_output_dir(tmp_path):
     from app.utils.pdf_helpers import merge_and_open
     # 空リスト → 早期リターン（None を返す）
     assert merge_and_open([], "テスト", output_dir=str(tmp_path)) is None
+
+
+def test_get_issuer_for_project_issuance_overrides_project(db_session):
+    from app.utils.pdf_helpers import get_issuer_for_project
+    from app.database.models import Issuance
+
+    cs_proj = CompanySettings(name="プロジェクト発行元", is_default=True)
+    cs_iss  = CompanySettings(name="発行ごとの発行元",   is_default=False)
+    db_session.add_all([cs_proj, cs_iss])
+    db_session.commit()
+
+    proj = Project(name="PJ", fiscal_year=2026, project_type="counter",
+                   company_settings_id=cs_proj.id)
+    db_session.add(proj)
+    db_session.commit()
+
+    iss = Issuance(doc_number="INV-001", doc_type="invoice",
+                   recipient_organization="テスト", status="発行済み",
+                   project_id=proj.id, amount=1000,
+                   company_settings_id=cs_iss.id)
+    db_session.add(iss)
+    db_session.commit()
+
+    company, _, _ = get_issuer_for_project(db_session, proj, issuance=iss)
+    assert company.id == cs_iss.id
+
+
+def test_get_issuer_for_project_issuance_dangling_reference_falls_back(db_session):
+    from app.utils.pdf_helpers import get_issuer_for_project
+    from app.database.models import Issuance
+
+    cs = CompanySettings(name="デフォルト会社", is_default=True)
+    db_session.add(cs)
+    db_session.commit()
+
+    proj = Project(name="PJ", fiscal_year=2026, project_type="counter")
+    db_session.add(proj)
+    db_session.commit()
+
+    iss = Issuance(doc_number="INV-002", doc_type="invoice",
+                   recipient_organization="テスト", status="発行済み",
+                   project_id=proj.id, amount=1000,
+                   company_settings_id=99999)  # 存在しないID
+    db_session.add(iss)
+    db_session.commit()
+
+    company, _, _ = get_issuer_for_project(db_session, proj, issuance=iss)
+    assert company.id == cs.id  # フォールバックでデフォルト発行元

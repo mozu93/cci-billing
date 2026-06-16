@@ -41,8 +41,11 @@ def get_default_seal(session, company):
     return seal
 
 
-def get_issuer_for_project(session, project) -> tuple:
-    """プロジェクト設定 → 発行元デフォルト → システムデフォルトの順に解決する。
+def get_issuer_for_project(session, project, issuance=None) -> tuple:
+    """発行（issuance）個別設定 → プロジェクト設定 → 発行元デフォルト → システムデフォルトの順に解決する。
+
+    issuance に company_settings_id 等が設定されていない、または参照先が
+    削除済み（None）の場合は次の優先度にフォールバックする。
 
     戻り値: (CompanySettings | None, BankAccount | None, SealImage | None)
     """
@@ -50,7 +53,9 @@ def get_issuer_for_project(session, project) -> tuple:
 
     # 1. 発行元を解決
     company = None
-    if project is not None and getattr(project, "company_settings_id", None):
+    if issuance is not None and getattr(issuance, "company_settings_id", None):
+        company = session.get(CompanySettings, issuance.company_settings_id)
+    if company is None and project is not None and getattr(project, "company_settings_id", None):
         company = session.get(CompanySettings, project.company_settings_id)
     if company is None:
         company = (session.query(CompanySettings).filter_by(is_default=True).first()
@@ -60,7 +65,9 @@ def get_issuer_for_project(session, project) -> tuple:
 
     # 2. 銀行口座を解決
     bank = None
-    if project is not None and getattr(project, "bank_account_id", None):
+    if issuance is not None and getattr(issuance, "bank_account_id", None):
+        bank = session.get(BankAccount, issuance.bank_account_id)
+    if bank is None and project is not None and getattr(project, "bank_account_id", None):
         bank = session.get(BankAccount, project.bank_account_id)
     if bank is None:
         bank = (session.query(BankAccount)
@@ -71,7 +78,9 @@ def get_issuer_for_project(session, project) -> tuple:
     # 3. 印鑑を解決（print_seal=False なら常に None）
     seal = None
     if getattr(company, "print_seal", True):
-        if project is not None and getattr(project, "seal_image_id", None):
+        if issuance is not None and getattr(issuance, "seal_image_id", None):
+            seal = session.get(SealImage, issuance.seal_image_id)
+        if seal is None and project is not None and getattr(project, "seal_image_id", None):
             seal = session.get(SealImage, project.seal_image_id)
         if seal is None:
             seal = (session.query(SealImage)
@@ -95,11 +104,7 @@ def generate_and_open(issuance, session, reissue: bool = False,
     一括発行時は open_file=False で生成だけ行い、
     呼び出し元で merge_and_open() にまとめて渡す。
     """
-    if project is not None:
-        company, bank, seal = get_issuer_for_project(session, project)
-    else:
-        company, bank = get_company_and_bank(session)
-        seal = get_default_seal(session, company)
+    company, bank, seal = get_issuer_for_project(session, project, issuance=issuance)
     if not company:
         return None
     output_dir = get_pdf_output_dir()

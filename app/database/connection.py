@@ -63,6 +63,10 @@ def _migrate(engine):
             ("recipient_department", "VARCHAR(100) DEFAULT ''"),
             ("recipient_name_kana",  "VARCHAR(100) DEFAULT ''"),
             ("recipient_phone",      "VARCHAR(50) DEFAULT ''"),
+            ("company_settings_id",   "INTEGER REFERENCES company_settings(id)"),
+            ("bank_account_id",       "INTEGER REFERENCES bank_accounts(id)"),
+            ("seal_image_id",          "INTEGER REFERENCES seal_images(id)"),
+            ("show_recipient_person", "BOOLEAN DEFAULT 1"),
         ]:
             if col not in iss_cols:
                 conn.execute(text(f"ALTER TABLE issuances ADD COLUMN {col} {ddl}"))
