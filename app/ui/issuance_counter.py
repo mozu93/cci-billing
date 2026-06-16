@@ -204,6 +204,92 @@ class IssuanceCounterWidget(QWidget):
             self._refresh_tmpl_combo(row)
         self._setup_completers()
 
+    def _reload_issuer_combo(self, select_company_id: int | None = None,
+                             select_bank_id: int | None = None,
+                             select_seal_id: int | None = None):
+        from app.database.models import CompanySettings
+        session = get_session()
+        try:
+            issuers = session.query(CompanySettings).order_by(CompanySettings.id).all()
+            self._issuer_combo.blockSignals(True)
+            self._issuer_combo.clear()
+            default_idx = 0
+            for i, cs in enumerate(issuers):
+                label = f"{'★ ' if cs.is_default else ''}{cs.name}"
+                self._issuer_combo.addItem(label, cs.id)
+                if cs.is_default and select_company_id is None:
+                    default_idx = i
+            self._issuer_combo.blockSignals(False)
+
+            if select_company_id is not None:
+                for i in range(self._issuer_combo.count()):
+                    if self._issuer_combo.itemData(i) == select_company_id:
+                        self._issuer_combo.setCurrentIndex(i)
+                        break
+            else:
+                self._issuer_combo.setCurrentIndex(default_idx)
+        finally:
+            session.close()
+        self._reload_bank_seal_combo(select_bank_id=select_bank_id,
+                                     select_seal_id=select_seal_id)
+
+    def _reload_bank_seal_combo(self, select_bank_id: int | None = None,
+                                select_seal_id: int | None = None):
+        from app.database.models import BankAccount, SealImage
+        company_id = self._issuer_combo.currentData()
+        session = get_session()
+        try:
+            self._bank_combo.blockSignals(True)
+            self._bank_combo.clear()
+            self._bank_combo.addItem("（なし）", None)
+            if company_id:
+                banks = session.query(BankAccount).filter_by(company_id=company_id).all()
+                for b in banks:
+                    label = f"{'★ ' if b.is_default else ''}{b.label} {b.bank_name}"
+                    self._bank_combo.addItem(label, b.id)
+            self._bank_combo.blockSignals(False)
+
+            self._seal_combo.blockSignals(True)
+            self._seal_combo.clear()
+            self._seal_combo.addItem("（なし）", None)
+            if company_id:
+                seals = session.query(SealImage).filter_by(company_id=company_id).all()
+                for s in seals:
+                    label = f"{'★ ' if s.is_default else ''}{s.label}"
+                    self._seal_combo.addItem(label, s.id)
+            self._seal_combo.blockSignals(False)
+
+            if select_bank_id is not None:
+                for i in range(self._bank_combo.count()):
+                    if self._bank_combo.itemData(i) == select_bank_id:
+                        self._bank_combo.setCurrentIndex(i)
+                        break
+            else:
+                for i in range(self._bank_combo.count()):
+                    if self._bank_combo.itemData(i) is not None:
+                        b = session.get(BankAccount, self._bank_combo.itemData(i))
+                        if b and b.is_default:
+                            self._bank_combo.setCurrentIndex(i)
+                            break
+
+            if select_seal_id is not None:
+                for i in range(self._seal_combo.count()):
+                    if self._seal_combo.itemData(i) == select_seal_id:
+                        self._seal_combo.setCurrentIndex(i)
+                        break
+            else:
+                for i in range(self._seal_combo.count()):
+                    if self._seal_combo.itemData(i) is not None:
+                        s = session.get(SealImage, self._seal_combo.itemData(i))
+                        if s and s.is_default:
+                            self._seal_combo.setCurrentIndex(i)
+                            break
+        finally:
+            session.close()
+
+    def _on_issuer_combo_changed(self, _):
+        self._reload_bank_seal_combo()
+
     def _load_edit_data(self):
         """編集モード：既存の Issuance からフォームを復元する。"""
         from app.database.connection import get_session
@@ -437,6 +523,21 @@ class IssuanceCounterWidget(QWidget):
         self._delivery.addItems(["窓口手渡し", "郵送", "メール送付"])
         opts_form.addRow("配付方法", self._delivery)
         if self._doc_type_str == "invoice":
+            self._issuer_combo = QComboBox()
+            self._bank_combo   = QComboBox()
+            self._seal_combo   = QComboBox()
+            self._issuer_combo.currentIndexChanged.connect(self._on_issuer_combo_changed)
+            opts_form.addRow("発行元",   self._issuer_combo)
+            opts_form.addRow("銀行口座", self._bank_combo)
+            opts_form.addRow("印鑑",     self._seal_combo)
+
+            from app.utils.app_config import get_config as _get_cfg
+            self._show_person_chk = QCheckBox("宛名に役職・氏名を印字する")
+            self._show_person_chk.setChecked(_get_cfg().get("recipient_person_last", True))
+            opts_form.addRow(self._show_person_chk)
+
+            self._reload_issuer_combo()
+
             y, m = (date.today().year, date.today().month + 1) if date.today().month < 12 else (date.today().year + 1, 1)
             default_due = date(y, m, calendar.monthrange(y, m)[1])
             self._due_date = QDateEdit(QDate(default_due.year, default_due.month, default_due.day))
@@ -886,6 +987,19 @@ class IssuanceCounterWidget(QWidget):
             QMessageBox.warning(self, "エラー",
                                 "項目が入力されていません。\n"
                                 "各行で項目を選択するか、直接入力してください。")
+            return
+
+        from app.utils.pdf_helpers import get_company_and_bank
+        _check_session = get_session()
+        try:
+            _company, _ = get_company_and_bank(_check_session)
+        finally:
+            _check_session.close()
+        if not _company:
+            QMessageBox.warning(
+                self, "発行不可",
+                "自社情報（会社設定）が未登録のため発行できません。\n"
+                "設定 → 会社情報 から登録してください。")
             return
 
         doc_type = self._doc_type_str
