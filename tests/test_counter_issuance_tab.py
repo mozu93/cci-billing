@@ -183,3 +183,86 @@ def test_payment_dialog_collect_only_mode(qtbot, memory_db):
     s.close()
 
 
+def test_issue_invoice_persists_selected_issuer_and_display_setting(qtbot, memory_db, monkeypatch):
+    """単発発行（請求書）で選んだ発行元・宛名表示設定が Issuance に保存される。"""
+    from app.database.connection import get_session
+    from app.database.models import CompanySettings, Issuance
+    from app.services.category_service import create_category
+    from app.services.item_template_service import create_item_template
+    import app.ui.issuance_counter as ic
+    from PyQt6.QtWidgets import QFileDialog
+
+    # app_config は実ファイル（~/.cci-billing/config.json）を読み書きするため、
+    # テストで開発機の実ファイルを汚さないようインメモリの辞書に差し替える。
+    import app.utils.app_config as cfg_mod
+    _fake_cfg: dict = {}
+    monkeypatch.setattr(cfg_mod, "get_config", lambda: _fake_cfg)
+    monkeypatch.setattr(cfg_mod, "save_config", lambda c: _fake_cfg.update(c))
+
+    s = get_session()
+    cs1 = CompanySettings(name="発行元A", is_default=True)
+    cs2 = CompanySettings(name="発行元B", is_default=False)
+    s.add_all([cs1, cs2])
+    s.commit()
+    cat = create_category(s, "不動産部会")
+    create_item_template(s, cat.id, "視察研修会参加費", 5000, "人", 0, "invoice", "")
+    cs2_id = cs2.id
+    s.close()
+
+    monkeypatch.setattr(ic.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: ("", "")))
+
+    w = ic.IssuanceCounterWidget("invoice")
+    qtbot.addWidget(w)
+    w._reload_master()
+    w._org_name.setText("テスト株式会社")
+    row = w._rows[0]
+    idx = next(i for i in range(row.tmpl_combo.count()) if row.tmpl_combo.itemData(i) is not None)
+    row.tmpl_combo.setCurrentIndex(idx)
+
+    issuer_idx = next(i for i in range(w._issuer_combo.count())
+                      if w._issuer_combo.itemData(i) == cs2_id)
+    w._issuer_combo.setCurrentIndex(issuer_idx)
+    w._show_person_chk.setChecked(False)
+
+    w._issue()
+
+    s = get_session()
+    iss = s.query(Issuance).order_by(Issuance.id.desc()).first()
+    assert iss.company_settings_id == cs2_id
+    assert iss.show_recipient_person is False
+    s.close()
+    assert _fake_cfg["recipient_person_last"] is False  # 次回デフォルト用に記憶される
+
+
+def test_edit_issuance_restores_issuer_and_display_setting(qtbot, memory_db):
+    """内容修正で開くと、保存済みの発行元・宛名表示設定が復元される。"""
+    from app.database.connection import get_session
+    from app.database.models import CompanySettings
+    from app.services.issuance_service import create_direct_issuance
+    import app.ui.issuance_counter as ic
+
+    s = get_session()
+    cs1 = CompanySettings(name="発行元A", is_default=True)
+    cs2 = CompanySettings(name="発行元B", is_default=False)
+    s.add_all([cs1, cs2])
+    s.commit()
+    lines = [{"item_template_id": None, "item_name": "会費",
+              "quantity": 1, "unit": "式", "unit_price": 5000, "tax_rate": 0}]
+    iss = create_direct_issuance(
+        s, lines_data=lines,
+        recipient_organization="○○商事", recipient_name="",
+        doc_type="invoice", fiscal_year=2026, month=6,
+        company_settings_id=cs2.id, show_recipient_person=False,
+    )
+    iss_id, cs2_id = iss.id, cs2.id
+    s.close()
+
+    w = ic.IssuanceCounterWidget("invoice", edit_issuance_id=iss_id)
+    qtbot.addWidget(w)
+    w._reload_master()
+    w._load_edit_data()
+
+    assert w._issuer_combo.currentData() == cs2_id
+    assert w._show_person_chk.isChecked() is False
+

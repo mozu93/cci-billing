@@ -317,6 +317,15 @@ class IssuanceCounterWidget(QWidget):
             idx = self._delivery.findText(iss.delivery_method or "")
             if idx >= 0:
                 self._delivery.setCurrentIndex(idx)
+            if self._doc_type_str == "invoice":
+                if iss.company_settings_id is not None:
+                    self._reload_issuer_combo(
+                        select_company_id=iss.company_settings_id,
+                        select_bank_id=iss.bank_account_id,
+                        select_seal_id=iss.seal_image_id,
+                    )
+                self._show_person_chk.setChecked(
+                    iss.show_recipient_person if iss.show_recipient_person is not None else True)
             for line in iss.lines:
                 self._add_row()
                 self._populate_row_from_line(self._rows[-1], line)
@@ -1002,6 +1011,18 @@ class IssuanceCounterWidget(QWidget):
                 "設定 → 会社情報 から登録してください。")
             return
 
+        issuer_company_id = bank_account_id = seal_image_id = None
+        show_recipient_person = True
+        if self._doc_type_str == "invoice":
+            issuer_company_id     = self._issuer_combo.currentData()
+            bank_account_id       = self._bank_combo.currentData()
+            seal_image_id         = self._seal_combo.currentData()
+            show_recipient_person = self._show_person_chk.isChecked()
+            from app.utils.app_config import get_config as _get_cfg, save_config as _save_cfg
+            _cfg = _get_cfg()
+            _cfg["recipient_person_last"] = show_recipient_person
+            _save_cfg(_cfg)
+
         doc_type = self._doc_type_str
         session  = get_session()
         try:
@@ -1022,6 +1043,10 @@ class IssuanceCounterWidget(QWidget):
                     recipient_department   = dept,
                     recipient_name_kana    = rep_kana,
                     recipient_phone        = phone,
+                    company_settings_id   = issuer_company_id,
+                    bank_account_id       = bank_account_id,
+                    seal_image_id         = seal_image_id,
+                    show_recipient_person = show_recipient_person,
                 )
                 _add_log(session, "内容修正", "issuance", iss.id,
                          f"{label} {iss.doc_number} 宛先：{iss.recipient_organization or iss.recipient_name}")
@@ -1045,6 +1070,10 @@ class IssuanceCounterWidget(QWidget):
                     recipient_department   = dept,
                     recipient_name_kana    = rep_kana,
                     recipient_phone        = phone,
+                    company_settings_id   = issuer_company_id,
+                    bank_account_id       = bank_account_id,
+                    seal_image_id         = seal_image_id,
+                    show_recipient_person = show_recipient_person,
                 )
                 _add_log(session, "発行", "issuance", iss.id,
                          f"{label} {iss.doc_number} 宛先：{iss.recipient_organization or iss.recipient_name}")
