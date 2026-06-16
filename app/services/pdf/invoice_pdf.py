@@ -159,6 +159,7 @@ def generate_invoice_pdf(issuance, company, output_path: str,
         recipient_postal_code=recipient_postal_code,
         recipient_address=recipient_address,
         recipient_address2=recipient_address2,
+        show_recipient_person=bool(getattr(issuance, "show_recipient_person", True)),
     )
     company_block = _build_company_block(
         issuance, company, issue_str, seal_image, col_w=W * 0.45)
@@ -246,11 +247,12 @@ def _build_client_block(issuance, subject: str = "",
                          window_envelope: bool = False,
                          recipient_postal_code: str = "",
                          recipient_address: str = "",
-                         recipient_address2: str = "") -> list:
+                         recipient_address2: str = "",
+                         show_recipient_person: bool = True) -> list:
     parts = []
     org    = issuance.recipient_organization or ""
-    dept   = getattr(issuance, "recipient_department", "") or ""
-    person = issuance.recipient_name or ""
+    dept   = (getattr(issuance, "recipient_department", "") or "") if show_recipient_person else ""
+    person = (issuance.recipient_name or "") if show_recipient_person else ""
 
     if window_envelope:
         if recipient_postal_code:
@@ -275,7 +277,7 @@ def _build_client_block(issuance, subject: str = "",
             f"{org}　御中" if org else "（宛名未設定）",
             _s("org", size=13, bold=True)))
 
-    parts.append(Spacer(1, 11*mm))
+    parts.append(Spacer(1, 22*mm))
     parts.append(Paragraph("下記の通り、ご請求申し上げます。",
                             _s("req", size=10, color=C_SUB)))
 
@@ -319,6 +321,7 @@ def _build_company_block(issuance, company, issue_str: str,
             co_parts.append(Paragraph(company.address, i_style))
         if company.phone:
             co_parts.append(Paragraph(f"TEL：{company.phone}", i_style))
+        co_parts.append(Spacer(1, 11*mm))
 
     if seal_image and getattr(seal_image, "path", None) and col_w:
         from reportlab.platypus import Image as RLImage
@@ -343,7 +346,7 @@ def _build_company_block(issuance, company, issue_str: str,
     return [
         Paragraph(f"No.　{issuance.doc_number}", r_style),
         Paragraph(f"請求日　{issue_str}", r_style),
-        Spacer(1, 3*mm),
+        Spacer(1, 11*mm),
     ] + co_content
 
 
@@ -479,15 +482,16 @@ def _build_bank_block(ba, W: float) -> Table:
     if ba.bank_branch:
         label += f"　{ba.bank_branch}"
     rows.append([Paragraph(label, i_style)])
-    if ba.bank_account_type and ba.bank_account_number:
-        rows.append([Paragraph(
-            f"口座番号：{ba.bank_account_type}　{ba.bank_account_number}", i_style)])
+    if ba.bank_account_type:
+        rows.append([Paragraph(f"口座種別：{ba.bank_account_type}", i_style)])
+    if ba.bank_account_number:
+        rows.append([Paragraph(f"口座番号：{ba.bank_account_number}", i_style)])
     if ba.bank_account_name:
         rows.append([Paragraph(f"口座名義：{ba.bank_account_name}", i_style)])
     tbl = Table(rows, colWidths=[W * 0.65], hAlign="LEFT")
     tbl.setStyle(TableStyle([
         ("TOPPADDING",    (0, 0), (-1, -1), 1.5*mm),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5*mm),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
     ]))
     return tbl

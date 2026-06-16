@@ -49,3 +49,37 @@ def test_generate_invoice_pdf(db_session):
     finally:
         if os.path.exists(path):
             os.unlink(path)
+
+
+def test_build_client_block_hides_person_when_disabled():
+    from app.services.pdf.invoice_pdf import _build_client_block
+    from app.database.models import Issuance
+
+    iss = Issuance(
+        doc_number="INV-003", doc_type="invoice",
+        recipient_organization="○○商事株式会社",
+        recipient_department="営業部",
+        recipient_name="田中太郎",
+    )
+    parts = _build_client_block(iss, show_recipient_person=False)
+    texts = [p.text for p in parts if hasattr(p, "text")]
+    assert any("御中" in t for t in texts)
+    assert not any("田中太郎" in t for t in texts)
+    assert not any("営業部" in t for t in texts)
+
+
+def test_build_client_block_shows_person_by_default():
+    """show_recipient_person を指定しない場合は既存どおり氏名・役職を表示する（回帰防止）。"""
+    from app.services.pdf.invoice_pdf import _build_client_block
+    from app.database.models import Issuance
+
+    iss = Issuance(
+        doc_number="INV-004", doc_type="invoice",
+        recipient_organization="○○商事株式会社",
+        recipient_department="営業部",
+        recipient_name="田中太郎",
+    )
+    parts = _build_client_block(iss)
+    texts = [p.text for p in parts if hasattr(p, "text")]
+    assert any("田中太郎" in t for t in texts)
+    assert any("営業部" in t for t in texts)
