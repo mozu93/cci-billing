@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QWidget, QVBoxLayout, QLabel, QMessageBox,
 )
 from PyQt6.QtGui import QAction
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, QTimer
 
 
 class MainWindow(QMainWindow):
@@ -16,6 +16,7 @@ class MainWindow(QMainWindow):
         self._setup_menu()
         self._build_tabs()
         self._setup_statusbar()
+        QTimer.singleShot(0, self._run_auto_backup)
 
     def _setup_menu(self):
         from app.version import __version__
@@ -47,7 +48,8 @@ class MainWindow(QMainWindow):
         from app.ui.reissue_tab import ReissueWidget
         tabs.addTab(ReissueWidget(), "修正・再発行")
 
-        from app.ui.settings_tab import SettingsTab
+        from app.ui.settings_tab import MasterTab, SettingsTab
+        tabs.addTab(MasterTab(), "登録・マスタ")
         tabs.addTab(SettingsTab(), "設定")
 
         tabs.setCurrentIndex(0)
@@ -65,6 +67,18 @@ class MainWindow(QMainWindow):
         ver_lbl.setStyleSheet("color: #94A3B8; font-size: 11px; padding: 0 8px;")
         sb.addPermanentWidget(ver_lbl)
         sb.showMessage("準備完了")
+
+    def _run_auto_backup(self):
+        from pathlib import Path
+        from app.services.backup_service import auto_backup_if_needed
+        try:
+            path = auto_backup_if_needed()
+            if path:
+                self.statusBar().showMessage(
+                    f"自動バックアップ完了: {Path(path).name}", 5000
+                )
+        except Exception:
+            pass  # 自動バックアップ失敗はサイレント
 
     def _show_about(self):
         from app.version import __version__

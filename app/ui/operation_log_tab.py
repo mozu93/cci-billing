@@ -2,7 +2,7 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QLabel, QComboBox, QPushButton, QHeaderView, QDateEdit, QFileDialog,
-    QMessageBox
+    QMessageBox, QLineEdit
 )
 from PyQt6.QtCore import Qt, QDate
 from app.database.connection import get_session
@@ -18,6 +18,8 @@ _COLS = [
     ("詳細",       0),  # stretch
 ]
 
+_KEYS = ["日時", "担当者", "操作", "詳細"]
+
 
 class OperationLogWidget(QWidget):
     def __init__(self):
@@ -32,6 +34,7 @@ class OperationLogWidget(QWidget):
     def _build(self):
         layout = QVBoxLayout(self)
 
+        # --- フィルタ行 ---
         top = QHBoxLayout()
         top.addWidget(QLabel("開始日："))
         self._from_date = QDateEdit(QDate.currentDate().addMonths(-1))
@@ -57,9 +60,21 @@ class OperationLogWidget(QWidget):
         top.addStretch()
         layout.addLayout(top)
 
+        # --- 検索行 ---
+        search_row = QHBoxLayout()
+        search_row.addWidget(QLabel("検索："))
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("担当者・操作・詳細でキーワードフィルタ")
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.textChanged.connect(self._filter_table)
+        search_row.addWidget(self._search_edit)
+        layout.addLayout(search_row)
+
+        # --- テーブル ---
         self._table = QTableWidget(0, len(_COLS))
         self._table.setHorizontalHeaderLabels([c[0] for c in _COLS])
         hdr = self._table.horizontalHeader()
+        hdr.setSortIndicatorShown(True)
         for i, (_, w) in enumerate(_COLS):
             if w == 0:
                 hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
@@ -75,7 +90,7 @@ class OperationLogWidget(QWidget):
         layout.addWidget(self._count_lbl)
 
     def _load(self):
-        from datetime import datetime, time
+        from datetime import datetime
         fd = self._from_date.date()
         td = self._to_date.date()
         from_dt = datetime(fd.year(), fd.month(), fd.day(), 0, 0, 0)
@@ -102,16 +117,35 @@ class OperationLogWidget(QWidget):
         finally:
             session.close()
 
+        self._filter_table()
+
+    def _filter_table(self):
+        keyword = self._search_edit.text().strip().lower()
+        if keyword:
+            rows = [r for r in self._rows if any(keyword in r[k].lower() for k in _KEYS)]
+        else:
+            rows = self._rows
+        self._render(rows)
+
+    def _render(self, rows: list[dict]):
+        # ソート中に行挿入するとQtが毎行ソートして重くなるため一時無効化
+        self._table.setSortingEnabled(False)
         self._table.setRowCount(0)
-        for row in self._rows:
+        for row in rows:
             r = self._table.rowCount()
             self._table.insertRow(r)
-            for col, key in enumerate(["日時", "担当者", "操作", "詳細"]):
+            for col, key in enumerate(_KEYS):
                 self._table.setItem(r, col, QTableWidgetItem(row[key]))
-        self._count_lbl.setText(f"{len(self._rows)} 件")
+        self._table.setSortingEnabled(True)
+        self._count_lbl.setText(f"{len(rows)} 件")
 
     def _export_csv(self):
-        if not self._rows:
+        keyword = self._search_edit.text().strip().lower()
+        if keyword:
+            rows = [r for r in self._rows if any(keyword in r[k].lower() for k in _KEYS)]
+        else:
+            rows = self._rows
+        if not rows:
             QMessageBox.information(self, "情報", "データがありません。")
             return
         path, _ = QFileDialog.getSaveFileName(self, "CSV保存", "", "CSV (*.csv)")
@@ -119,7 +153,7 @@ class OperationLogWidget(QWidget):
             return
         import csv
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
-            writer = csv.DictWriter(f, fieldnames=["日時", "担当者", "操作", "詳細"])
+            writer = csv.DictWriter(f, fieldnames=_KEYS)
             writer.writeheader()
-            writer.writerows(self._rows)
+            writer.writerows(rows)
         QMessageBox.information(self, "完了", f"CSVを保存しました。\n{path}")

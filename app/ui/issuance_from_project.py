@@ -161,11 +161,23 @@ class IssuanceFromProjectWidget(QWidget):
             self._due_date.setCalendarPopup(True)
             self._due_date.setDisplayFormat("yyyy/MM/dd")
             self._window_envelope_chk = QCheckBox("窓あき封筒モード")
+            self._show_person_chk = QCheckBox("役職名・氏名を印字")
+            self._show_person_chk.setChecked(True)
             action_row.addSpacing(16)
             action_row.addWidget(QLabel("支払期日："))
             action_row.addWidget(self._due_date)
             action_row.addSpacing(8)
             action_row.addWidget(self._window_envelope_chk)
+            action_row.addSpacing(4)
+            action_row.addWidget(self._show_person_chk)
+        else:
+            today = date.today()
+            self._issued_date = QDateEdit(QDate(today.year, today.month, today.day))
+            self._issued_date.setCalendarPopup(True)
+            self._issued_date.setDisplayFormat("yyyy/MM/dd")
+            action_row.addSpacing(16)
+            action_row.addWidget(QLabel("発行日："))
+            action_row.addWidget(self._issued_date)
 
         action_row.addStretch()
         self._btn_export_xlsx = QPushButton("Excel出力")
@@ -428,6 +440,7 @@ class IssuanceFromProjectWidget(QWidget):
         try:
             from app.database.models import Issuance
             pm_data = []
+            issued_count = 0
             for pid in project_ids:
                 for pm in get_project_members(session, pid):
                     inv = (session.query(Issuance)
@@ -443,6 +456,8 @@ class IssuanceFromProjectWidget(QWidget):
                     sel_status = sel.status if sel else "未発行"
                     hide_issued = sel_status in ("発行済み", "支払済み")
                     hide_voided = doc_type == "invoice" and voided
+                    if hide_issued:
+                        issued_count += 1
                     if not show_all and (hide_issued or hide_voided):
                         continue
                     if query:
@@ -533,7 +548,13 @@ class IssuanceFromProjectWidget(QWidget):
             self._sort_col,
             Qt.SortOrder.AscendingOrder if self._sort_asc else Qt.SortOrder.DescendingOrder)
         self._table.resizeRowsToContents()
-        self._status_label.setText(f"{len(pm_data)} 件表示")
+        doc_label = "請求書" if doc_type == "invoice" else "領収書"
+        if show_all:
+            self._status_label.setText(
+                f"{len(pm_data)} 件表示　（{doc_label}発行済 {issued_count} 件）")
+        else:
+            self._status_label.setText(
+                f"未発行 {len(pm_data)} 件　／　{doc_label}発行済 {issued_count} 件")
 
     # ── 行数量取得 / キャッシュ保存 ──────────────────────────────
 
@@ -797,13 +818,20 @@ class IssuanceFromProjectWidget(QWidget):
         if not targets:
             return errors
 
-        # ── 支払期限・封筒オプション（請求書のみ）────────────────
+        # ── 支払期限・封筒オプション（請求書のみ）/ 発行日（領収書のみ）──
         due_date = None
         window_envelope = False
+        show_recipient_person = True
+        receipt_issued_at = None
         if doc_type == "invoice":
             qd = self._due_date.date()
             due_date = date(qd.year(), qd.month(), qd.day())
             window_envelope = self._window_envelope_chk.isChecked()
+            show_recipient_person = self._show_person_chk.isChecked()
+        else:
+            from datetime import datetime as _dt
+            qd = self._issued_date.date()
+            receipt_issued_at = _dt(qd.year(), qd.month(), qd.day())
 
         # ── 保存先フォルダを選択（メール送付以外）──────────────────
         save_dir: str | None = None
@@ -833,10 +861,12 @@ class IssuanceFromProjectWidget(QWidget):
                             project_member_id=pm_id,
                             recipient_organization=pm.organization_name,
                             recipient_name=pm.representative_name,
+                            recipient_department=pm.department or "",
                             doc_type=doc_type,
                             fiscal_year=today.year, month=today.month,
                             quantities=quantities if quantities else None,
                             unit_prices=unit_prices if unit_prices else None,
+                            show_recipient_person=show_recipient_person,
                         )
                         issuance_id = iss.id
 
@@ -848,7 +878,8 @@ class IssuanceFromProjectWidget(QWidget):
                         mark_as_issued(session, issuance_id,
                                        staff_id=current_user.get_id(),
                                        staff_name=current_user.get_name(),
-                                       delivery_method=delivery)
+                                       delivery_method=delivery,
+                                       issued_at=receipt_issued_at)
                         iss = session.get(Issuance, issuance_id)
                         from app.services.operation_log_service import add_log
                         _lbl = "請求書" if doc_type == "invoice" else "領収書"

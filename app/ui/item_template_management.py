@@ -14,7 +14,6 @@ from app.services.item_template_service import (
 )
 
 TAX_RATE_OPTIONS = [("消費税10%", 10), ("消費税8%", 8), ("非課税", 0), ("不課税", -1)]
-DOC_TYPE_OPTIONS = [("請求書・領収書両方", "both"), ("請求書のみ", "invoice"), ("領収書のみ", "receipt")]
 
 
 class ItemTemplateManagementWidget(QWidget):
@@ -39,11 +38,11 @@ class ItemTemplateManagementWidget(QWidget):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        self._table = QTableWidget(0, 6)
+        self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(
-            ["業務名", "項目名", "単価", "単位", "税区分", "書類種別"])
+            ["業務名", "項目名", "単価", "単位", "税区分"])
         hdr = self._table.horizontalHeader()
-        for col in range(6):
+        for col in range(5):
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.cellDoubleClicked.connect(lambda row, _: self._open_edit(row))
@@ -57,9 +56,8 @@ class ItemTemplateManagementWidget(QWidget):
             for t in templates:
                 cat_name = t.category.name if t.category else ""
                 tax_label = next((l for l, v in TAX_RATE_OPTIONS if v == t.tax_rate), str(t.tax_rate))
-                doc_label = next((l for l, v in DOC_TYPE_OPTIONS if v == t.doc_type), t.doc_type)
                 rows.append((t.id, cat_name, t.name, f"¥{int(t.unit_price):,}",
-                              t.unit, tax_label, doc_label))
+                              t.unit, tax_label))
         finally:
             session.close()
         self._table.setRowCount(0)

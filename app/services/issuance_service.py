@@ -69,7 +69,9 @@ def create_issuance_for_member(session: Session, project_id: int,
                                 doc_type: str, fiscal_year: int,
                                 month: int,
                                 quantities: dict[int, int] | None = None,
-                                unit_prices: dict[int, int] | None = None) -> Issuance:
+                                unit_prices: dict[int, int] | None = None,
+                                recipient_department: str = "",
+                                show_recipient_person: bool = True) -> Issuance:
     doc_number = get_next_doc_number(session, doc_type, fiscal_year, month)
     lines, total = _build_lines_from_project(
         session, project_id, quantities=quantities, unit_prices=unit_prices)
@@ -79,10 +81,12 @@ def create_issuance_for_member(session: Session, project_id: int,
         project_member_id=project_member_id,
         recipient_organization=recipient_organization,
         recipient_name=recipient_name,
+        recipient_department=recipient_department,
         doc_type=doc_type,
         doc_number=doc_number,
         status="準備中",
         amount=total,
+        show_recipient_person=show_recipient_person,
     )
     session.add(issuance)
     session.flush()
@@ -175,11 +179,12 @@ def create_combined_issuance(session: Session,
 
 def mark_as_issued(session: Session, issuance_id: int,
                    staff_id: int | None, staff_name: str,
-                   delivery_method: str = "窓口手渡し") -> None:
+                   delivery_method: str = "窓口手渡し",
+                   issued_at: datetime | None = None) -> None:
     issuance = session.get(Issuance, issuance_id)
     if issuance:
         issuance.status = "発行済み"
-        issuance.issued_at = datetime.now()
+        issuance.issued_at = issued_at or datetime.now()
         issuance.staff_id = staff_id
         issuance.staff_name = staff_name
         issuance.delivery_method = delivery_method
